@@ -31,6 +31,9 @@ def run_preflight(config,execute=False,replay=False):
     try: root.mkdir(parents=True,exist_ok=True); ok=os.access(root,os.W_OK)
     except OSError as e: ok=False
     checks.append(Check("output_writable",ok,str(root)))
+    free_gib=shutil.disk_usage(root).free/1024**3 if root.exists() else 0
+    minimum=d["storage"]["minimum_free_space_gib"]
+    checks.append(Check("disk_free_space",free_gib>=minimum,f"{free_gib:.1f} GiB free, minimum {minimum:.1f} GiB",replay))
     if not checks[0].ok:return checks
     rc,topics,err=_lines(["ros2","topic","list"])
     checks.append(Check("ros_graph",rc==0,err or f"{len(topics)} topics"))
@@ -56,6 +59,15 @@ def run_preflight(config,execute=False,replay=False):
     storage=d["storage"]["rosbag_storage_id"]
     p=subprocess.run(["ros2","bag","record","--help"],capture_output=True,text=True)
     checks.append(Check(f"rosbag_storage:{storage}",p.returncode==0,storage+" requested"))
+    if replay:
+        from ..core.video_recording import select_encoder
+        for name in ("primary","wrist"):
+            camera=d["camera_recording"][name]
+            if not camera["enabled"]:continue
+            try:
+                selected=select_encoder(camera["preferred_encoder"],camera["fallback_encoder"])
+                checks.append(Check(f"encoder:{name}",True,selected))
+            except RuntimeError as e:checks.append(Check(f"encoder:{name}",False,str(e)))
     return checks
 
 def preflight_ok(checks): return all(c.ok for c in checks if c.required)

@@ -21,22 +21,26 @@ def debayer_grbg(frame:np.ndarray,width:int,height:int)->np.ndarray:
     return np.ascontiguousarray(cv2.cvtColor(raw,cv2.COLOR_BayerGR2RGB))
 
 class OCamPublisher:
-    def __init__(self,node,device,width,height,fps,frame_id):
+    def __init__(self,node,device,width,height,fps,frame_id,preview_fps):
         from rclpy.qos import qos_profile_sensor_data
         from sensor_msgs.msg import Image
         self.node=node; self.device=str(Path(device).resolve(strict=True))
         self.width=width; self.height=height; self.fps=fps; self.frame_id=frame_id
+        self.preview_every=max(1,int(round(fps/preview_fps))) if preview_fps>0 else None
         if width<=0 or height<=0 or fps<=0:raise RuntimeError("width, height, and fps must be positive")
         if shutil.which("v4l2-ctl") is None:raise RuntimeError("v4l2-ctl not found; install v4l-utils")
         self.frame_size=width*height; self.bridge=CvBridge()
+        self.Image=Image
         self.publisher=node.create_publisher(Image,"image_raw",qos_profile_sensor_data)
+        self.preview_publisher=node.create_publisher(Image,"image_color",qos_profile_sensor_data) if self.preview_every else None
         self.process:Optional[subprocess.Popen[bytes]]=None; self.stderr_thread=None
         self.shutting_down=False; self.frame_count=0; self.last_warning=0.0; self.last_restart=0.0
         self._configure(); self._start()
         self.timer=node.create_timer(1.0/fps,self._capture)
         node.get_logger().info(
             f"oCam started: device={device} -> {self.device}, "
-            f"size={width}x{height}, fps={fps:g}, topic=/wrist_camera/image_raw"
+            f"size={width}x{height}, fps={fps:g}, raw=bayer_grbg8, "
+            f"topic=/wrist_camera/image_raw, preview_fps={preview_fps:g}"
         )
     def _run(self,args):
         command=["v4l2-ctl","-d",self.device,*args]
@@ -92,13 +96,19 @@ class OCamPublisher:
             self._warn("oCam stream is not running");self._restart();return
         data=self._read_exactly(p.stdout,self.frame_size)
         if data is None:self._warn("failed to read complete oCam frame");self._restart();return
-        try:
-            raw=np.frombuffer(data,np.uint8).reshape(self.height,self.width)
-            bgr=debayer_grbg(raw,self.width,self.height)
-            msg=self.bridge.cv2_to_imgmsg(bgr,encoding="bgr8")
-        except (ValueError,cv2.error,RuntimeError) as e:self._warn(f"frame conversion failed: {e}");return
-        msg.header.stamp=self.node.get_clock().now().to_msg();msg.header.frame_id=self.frame_id
+        stamp=self.node.get_clock().now().to_msg()
+        msg=self.Image();msg.header.stamp=stamp;msg.header.frame_id=self.frame_id
+        msg.height=self.height;msg.width=self.width;msg.encoding="bayer_grbg8"
+        msg.is_bigendian=0;msg.step=self.width;msg.data=data
         self.publisher.publish(msg);self.frame_count+=1
+        raw=np.frombuffer(data,np.uint8).reshape(self.height,self.width)
+        if self.preview_every and self.frame_count%self.preview_every==0:
+            try:
+                bgr=debayer_grbg(raw,self.width,self.height)
+                preview=self.bridge.cv2_to_imgmsg(bgr,encoding="bgr8")
+                preview.header.stamp=stamp;preview.header.frame_id=self.frame_id
+                self.preview_publisher.publish(preview)
+            except (ValueError,cv2.error,RuntimeError) as e:self._warn(f"preview conversion failed: {e}")
         if self.frame_count==1:self.node.get_logger().info(f"first frame: shape={raw.shape}, min={raw.min()}, max={raw.max()}")
         elif self.frame_count%600==0:self.node.get_logger().info(f"published {self.frame_count} frames")
     def _restart(self):
@@ -118,13 +128,14 @@ class OCamPublisher:
 def main(argv=None):
     p=argparse.ArgumentParser(description="oCam GRBG wrist camera ROS 2 publisher")
     p.add_argument("--device",default=DEFAULT_DEVICE);p.add_argument("--width",type=int,default=1280)
-    p.add_argument("--height",type=int,default=800);p.add_argument("--fps",type=float,default=60.0)
+    p.add_argument("--height",type=int,default=800);p.add_argument("--fps",type=float,default=30.0)
+    p.add_argument("--preview-fps",type=float,default=10.0)
     p.add_argument("--frame-id",default="ocam_optical_frame")
     args,ros_args=p.parse_known_args(argv)
     import rclpy
     from rclpy.node import Node
     rclpy.init(args=ros_args);node=Node("ocam_publisher",namespace="/wrist_camera");camera=None
-    try:camera=OCamPublisher(node,args.device,args.width,args.height,args.fps,args.frame_id);rclpy.spin(node)
+    try:camera=OCamPublisher(node,args.device,args.width,args.height,args.fps,args.frame_id,args.preview_fps);rclpy.spin(node)
     except KeyboardInterrupt:pass
     except (OSError,RuntimeError) as e:node.get_logger().fatal(str(e))
     finally:

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,sys,time
+import json,sys,time,shutil
 from pathlib import Path
 import numpy as np
 from .core.episode import update_status,utc_now
@@ -20,10 +20,12 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
     if not preflight_ok(checks): return 2
     if not wall_clock_fallback:
         raise RuntimeError("controller-feedback gripper scheduling is UNVERIFIED_ON_HARDWARE; pass --wall-clock-gripper-fallback explicitly")
-    if (root/"replay/rosbag2").exists():
+    replay_root=root/"replay"
+    existing=[replay_root/x for x in ("robot_states.mcap","primary.mkv","wrist.mkv","primary.mp4","wrist.mp4")]
+    if any(x.exists() for x in existing) or (replay_root/"robot_states_bag").exists():
         raise RuntimeError(
-            "replay bag already exists; overwrite forbidden. Use a new episode or "
-            "archive the interrupted replay/rosbag2 directory before retrying."
+            "replay capture already exists; overwrite forbidden. Use a new episode or "
+            "archive existing robot_states/video files before retrying."
         )
     # Deliberately require the ROS runtime implementation and explicit fallback.
     from .ros_adapters.rosbag_recorder import RosbagRecorder
@@ -31,14 +33,34 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
         import rclpy
         from rclpy.node import Node
         from sensor_msgs.msg import JointState
+        from std_msgs.msg import String
+        from tf2_ros import Buffer,TransformListener
     except ImportError as e: raise RuntimeError(f"ROS Python packages unavailable: {e}") from e
     from rclpy.signals import SignalHandlerOptions
     d=config.data; rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-    node=Node("octo_replay_trajectory"); latest={"q":None}
+    node=Node("octo_replay_trajectory"); latest={"q":None,"velocity":None,"source_ros_ns":None}
+    runtime={"grip":None,"feedback":None,"state":"preflight"}
     def cb(msg):
         idx={n:i for i,n in enumerate(msg.name)}
-        if all(n in idx for n in d["robot"]["joint_names"]):latest["q"]=np.array([msg.position[idx[n]] for n in d["robot"]["joint_names"]])
+        if all(n in idx for n in d["robot"]["joint_names"]):
+            latest["q"]=np.array([msg.position[idx[n]] for n in d["robot"]["joint_names"]])
+            latest["velocity"]=[msg.velocity[idx[n]] if idx[n]<len(msg.velocity) else None for n in d["robot"]["joint_names"]]
+            latest["source_ros_ns"]=msg.header.stamp.sec*1_000_000_000+msg.header.stamp.nanosec
     node.create_subscription(JointState,d["ros"]["joint_state_topic"],cb,20)
+    tf_buffer=Buffer();tf_listener=TransformListener(tf_buffer,node)
+    state_pub=node.create_publisher(String,"/octo_collector/robot_state",20)
+    def publish_robot_state():
+        if latest["q"] is None:return
+        now=node.get_clock().now().nanoseconds;tcp=None
+        try:
+            tf=tf_buffer.lookup_transform(d["robot"]["base_frame"],d["robot"]["tcp_frame"],rclpy.time.Time())
+            t=tf.transform.translation;r=tf.transform.rotation
+            tcp={"position":[t.x,t.y,t.z],"quaternion_xyzw":[r.x,r.y,r.z,r.w]}
+        except Exception:pass
+        fb=runtime["feedback"] or {}
+        payload={"ros_stamp_ns":now,"joint_source_ros_ns":latest["source_ros_ns"],"monotonic_ns":time.monotonic_ns(),"actual_joint_positions":latest["q"].tolist(),"actual_joint_velocities":latest["velocity"],"actual_tcp":tcp,"gripper_state":runtime["grip"].last_state if runtime["grip"] else None,"replay_state":runtime["state"],"commanded_joint_positions":fb.get("desired_positions")}
+        msg=String();msg.data=json.dumps(payload,separators=(",",":"));state_pub.publish(msg)
+    node.create_timer(1/d["sampling"]["demonstration_rate_hz"],publish_robot_state)
     deadline=time.monotonic()+2
     while latest["q"] is None and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=.1)
     if latest["q"] is None or np.max(np.abs(latest["q"]-q[0]))>d["replay"]["initial_joint_tolerance_rad"]:
@@ -46,14 +68,29 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
     from .ros_adapters.digital_output_gripper import DigitalOutputGripperAdapter
     from .core.gripper import GripperController
     adapter=DigitalOutputGripperAdapter(node,{**d["gripper"],**d["ros"]}); grip=GripperController(d["gripper"],lambda value:adapter.send(value,d["gripper"]["command_timeout_sec"]))
-    bag=RosbagRecorder(root/"replay/rosbag2",d["raw_topics"]["replay"],d["storage"]["rosbag_storage_id"])
+    runtime["grip"]=grip
+    bag=RosbagRecorder(
+        replay_root/"robot_states_bag",d["raw_topics"]["replay"],
+        d["storage"]["rosbag_storage_id"],d["storage"]["rosbag_storage_preset_profile"],
+    )
+    from .ros_adapters.camera_video_recorder import CameraVideoRecorder
+    video_recorders=[]
+    cr=d["camera_recording"];container=d["storage"]["video_container"]
+    for name in ("primary","wrist"):
+        if cr[name]["enabled"]:
+            video_recorders.append(CameraVideoRecorder(node,name,cr[name],replay_root,cr["capture_fps"],cr["encoder_queue_size"],container))
+    for recorder in video_recorders:recorder.start()
     bag.start(); update_status(root,"replaying"); start=time.monotonic(); trajectory_start=None; failure=None; goal_accepted=False; result_code=None; handle=None
+    def spin_for(seconds):
+        deadline=time.monotonic()+seconds
+        while rclpy.ok() and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=min(.02,deadline-time.monotonic()))
     try:
         first=grip.command_semantic(int(g[0]),execute=True)
         if not first.success: raise RuntimeError("initial gripper command failed")
-        time.sleep(d["replay"]["start_settle_sec"])
+        spin_for(d["replay"]["start_settle_sec"])
         from .ros_adapters.trajectory_client import TrajectoryClient
-        feedback={"progress":None,"receipt":None,"max_error":None}
+        feedback={"progress":None,"receipt":None,"max_error":None,"desired_positions":None}
+        runtime["feedback"]=feedback
         def feedback_cb(message):
             point=message.feedback
             duration=point.desired.time_from_start
@@ -61,13 +98,14 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
             feedback["receipt"]=time.monotonic()
             if point.error.positions:
                 feedback["max_error"]=float(np.max(np.abs(point.error.positions)))
+            if point.desired.positions:feedback["desired_positions"]=list(point.desired.positions)
         client=TrajectoryClient(node,d["ros"]["trajectory_action"],d["replay"]["controller_joint_order"],feedback_cb)
         goal=client.make_goal(times,q)
         future=client.client.send_goal_async(goal,feedback_callback=feedback_cb)
         rclpy.spin_until_future_complete(node,future,timeout_sec=5)
         handle=future.result()
         if handle is None or not handle.accepted: raise RuntimeError("trajectory goal rejected")
-        goal_accepted=True; trajectory_start=time.monotonic(); pending=list(events)
+        goal_accepted=True;runtime["state"]="executing";trajectory_start=time.monotonic();pending=list(events)
         fallback_timeout=float(times[-1])*d["replay"]["result_timeout_factor"]+d["replay"]["result_timeout_margin_sec"]
         result_deadline=None; end_reached=False; last_progress=-1
         print(
@@ -113,8 +151,9 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
                     f"last controller progress={controller_progress}, max_error={feedback['max_error']}"
                 )
         result_code=result.result().result.error_code
+        runtime["state"]="settling"
         print(f"trajectory result received: error_code={result_code}",flush=True)
-        time.sleep(d["replay"]["end_settle_sec"])
+        spin_for(d["replay"]["end_settle_sec"])
     except (KeyboardInterrupt,Exception) as e:
         failure=str(e)
         if isinstance(e,KeyboardInterrupt): failure="Ctrl+C"
@@ -123,10 +162,42 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
             rclpy.spin_until_future_complete(node,cancel,timeout_sec=2)
             print(f"trajectory cancel requested: {failure}",flush=True)
     finally:
-        bag_code=bag.stop(); actual=time.monotonic()-start; node.destroy_node()
+        camera_stats={}
+        for recorder in video_recorders:
+            try:camera_stats[recorder.name]=recorder.stop()
+            except Exception as e:camera_stats[recorder.name]={"error":str(e)}
+        bag_code=bag.stop(); actual=time.monotonic()-start
+        try:bag.export_single_mcap(replay_root/"robot_states.mcap")
+        except Exception as e:
+            if failure is None:failure=f"robot state MCAP finalize failed: {e}"
+        node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
-    summary={"execute":True,"goal_accepted":goal_accepted,"result_code":result_code,"planned_duration_sec":float(times[-1]),"actual_duration_sec":actual,"joint_tracking_rmse":None,"joint_tracking_max_error":None,"gripper_event_count":len(events),"gripper_event_timing_errors":[],"camera_topic_message_counts":{},"state_topic_message_counts":{},"bag_storage_id":d["storage"]["rosbag_storage_id"],"bag_exit_code":bag_code,"failure_reason":failure,"timing_mode":"wall_clock_explicit_fallback"}
+    metadata={"schema_version":3,"episode_id":root.name,"container":container,"capture_fps":cr["capture_fps"],"dataset_rate_hz":cr["dataset_rate_hz"],"robot_state_file":"robot_states.mcap","camera_timestamp_clock":"ROS header stamp with local monotonic receipt index","preview_recorded":False,"training_data_contract":{"timeline":"common ROS nanoseconds","frame_selection":"nearest unique frame to 10 Hz target timestamp","camera_output":"RGB uint8","gripper_semantic":{"open":0,"closed":1},"tcp_orientation":"quaternion_xyzw","joint_order":d["robot"]["joint_names"]},"cameras":{}}
+    for recorder in video_recorders:
+        metadata["cameras"][recorder.name]={"file":f"{recorder.name}.{container}","timestamps":f"{recorder.name}_timestamps.csv","resolution":recorder.c["resolution"],"source_topic":recorder.c["source_topic"],"source_encoding":recorder.c["source_encoding"],"bayer_pattern":recorder.c["bayer_pattern"],"encoder_input_color_order":"BGR","stored_pixel_format":recorder.c["pixel_format"],"decoded_dataset_contract":"RGB uint8","dataset_preprocessing":d["dataset_preprocessing"][recorder.name],"codec":"h264","encoder":camera_stats[recorder.name].get("encoder"),"bitrate_mbps":recorder.c["bitrate_mbps"],"maxrate_mbps":recorder.c["maxrate_mbps"],"bufsize_mbps":recorder.c["bufsize_mbps"],"gop_size":recorder.c["gop_size"]}
+    (replay_root/"metadata.json").write_text(json.dumps(metadata,indent=2)+"\n")
+    from .core.video_recording import storage_projection
+    files=[replay_root/f"{x}.{container}" for x in ("primary","wrist")]+[replay_root/"robot_states.mcap"]
+    projection=storage_projection(files,actual)
+    quality={"cameras":camera_stats,**projection,"warnings":[],"primary_wrist_time_difference_mean_ms":None,"primary_wrist_time_difference_p95_ms":None,"primary_wrist_time_difference_max_ms":None,"pose_sync_p95_ms":None,"joint_sync_p95_ms":None,"gripper_age_p95_ms":None}
+    for name,s in camera_stats.items():
+        for source,target in (("actual_fps","actual_fps"),("frame_count","frame_count"),("frame_drop_ratio","frame_drop_ratio"),("interval_mean_ms","interval_mean_ms"),("interval_std_ms","interval_std_ms"),("max_interval_ms","max_interval_ms"),("bitrate_actual_mbps","bitrate_actual_mbps"),("file_size_bytes","file_size_bytes")):
+            quality[f"{name}_{target}"]=s.get(source)
+        if abs(s.get("actual_fps",0)-cr["capture_fps"])/cr["capture_fps"]>.1:quality["warnings"].append(f"{name}: actual FPS outside 10%")
+        if s.get("frame_drop_ratio",0)>.01:quality["warnings"].append(f"{name}: frame drop ratio exceeds 1%")
+        if s.get("max_interval_ms") and s["max_interval_ms"]>1.5*1000/cr["capture_fps"]:quality["warnings"].append(f"{name}: max frame interval exceeds 1.5x expected")
+        if s.get("file_size_bytes",0)==0:quality["warnings"].append(f"{name}: video file is empty")
+        if s.get("decoded_frame_count")!=s.get("timestamp_row_count"):quality["warnings"].append(f"{name}: decoded frame count differs from timestamp CSV")
+        if s.get("error") or s.get("file_size_bytes",0)==0 or s.get("decoded_frame_count")!=s.get("timestamp_row_count"):
+            if failure is None:failure=f"{name} video is not training-compatible"
+    free=shutil.disk_usage(replay_root).free/1024**3
+    quality["free_space_gib"]=free
+    if free<d["storage"]["minimum_free_space_gib"]:quality["warnings"].append("disk free space below configured minimum")
+    if projection["expected_size_for_100_episodes_gib"]>free:quality["warnings"].append("estimated 100-episode size exceeds free space")
+    (replay_root/"quality_report.json").write_text(json.dumps(quality,indent=2)+"\n")
+    summary={"schema_version":3,"execute":True,"goal_accepted":goal_accepted,"result_code":result_code,"dataset_compatible":failure is None and result_code==0,"planned_duration_sec":float(times[-1]),"actual_duration_sec":actual,"joint_tracking_rmse":None,"joint_tracking_max_error":feedback.get("max_error") if "feedback" in locals() else None,"gripper_event_count":len(events),"gripper_event_timing_errors":[],"camera_topic_message_counts":{k:v.get("frame_count") for k,v in camera_stats.items()},"state_topic_message_counts":{},"bag_storage_id":d["storage"]["rosbag_storage_id"],"bag_exit_code":bag_code,"failure_reason":failure,"timing_mode":"controller_feedback_with_explicit_wall_fallback"}
     (root/"replay/execution_summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+    (root/"replay/episode_result.json").write_text(json.dumps(summary,indent=2)+"\n")
     update_status(root,"failed" if failure or result_code!=0 else "completed",failure)
     return 2 if failure or result_code!=0 else 0
 

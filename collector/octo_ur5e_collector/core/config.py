@@ -19,7 +19,7 @@ class CollectorConfig:
     @property
     def storage(self): return self.data["storage"]
 
-TOP = {"schema_version","robot","ros","cameras","sampling","freedrive","keyboard","gripper","replay","storage","raw_topics","action_contract"}
+TOP = {"schema_version","robot","ros","cameras","sampling","camera_recording","freedrive","keyboard","gripper","replay","storage","synchronization","dataset_preprocessing","raw_topics","action_contract"}
 KEYS = {
 "robot":{"name","base_frame","tcp_frame","joint_names"},
 "ros":{"joint_state_topic","tf_topic","tf_static_topic","controller_state_topic","trajectory_action","io_states_topic","set_io_service","robot_program_running_topic","safety_mode_topic"},
@@ -28,7 +28,9 @@ KEYS = {
 "keyboard":{"open_keys","close_keys","finish_keys","abort_keys"},
 "gripper":{"semantic_open","semantic_closed","backend","output_pin","output_value_for_open","output_value_for_closed","command_on_change_only","minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec","readback_from_io_states","initial_state_source"},
 "replay":{"controller_joint_order","initial_joint_tolerance_rad","speed_scale","start_settle_sec","end_settle_sec","feedback_stale_sec","result_timeout_factor","result_timeout_margin_sec","max_joint_velocity_rad_s","max_joint_acceleration_rad_s2","execute_requires_program_running","execute_requires_normal_safety"},
-"storage":{"output_root","rosbag_storage_id","overwrite"},
+"storage":{"output_root","rosbag_storage_id","rosbag_storage_preset_profile","video_container","raw_state_storage","compression_format","minimum_free_space_gib","overwrite"},
+"synchronization":{"max_camera_time_error_ms","max_primary_wrist_difference_ms","max_pose_interpolation_gap_ms","max_joint_interpolation_gap_ms","max_gripper_age_ms"},
+"dataset_preprocessing":{"primary","wrist"},
 "raw_topics":{"demonstration","replay"},
 "action_contract":{"dimension","translation_unit","rotation_representation","delta_frame","gripper_index","normalization_mask"}}
 
@@ -45,6 +47,21 @@ def load_config(path: str|Path) -> CollectorConfig:
     for section, keys in KEYS.items():
         if not isinstance(d[section],dict): raise ConfigError(f"{section} must be a mapping")
         _require_keys(d[section],keys,section)
+    cr=d["camera_recording"]
+    _require_keys(cr,{"capture_fps","dataset_rate_hz","encoder_queue_size","primary","wrist","preview"},"camera_recording")
+    camera_keys={"enabled","source_topic","source_encoding","bayer_pattern","resolution","codec","preferred_encoder","fallback_encoder","bitrate_mbps","maxrate_mbps","bufsize_mbps","gop_size","preset","profile","pixel_format"}
+    for name in ("primary","wrist"):
+        _require_keys(cr[name],camera_keys,f"camera_recording.{name}")
+        if len(cr[name]["resolution"])!=2 or any(int(x)<=0 for x in cr[name]["resolution"]): raise ConfigError(f"invalid {name} resolution")
+        if any(cr[name][k]<=0 for k in ("bitrate_mbps","maxrate_mbps","bufsize_mbps","gop_size")): raise ConfigError(f"invalid {name} encoder setting")
+    _require_keys(cr["preview"],{"enabled","fps","record"},"camera_recording.preview")
+    if cr["capture_fps"]<=0 or cr["dataset_rate_hz"]<=0 or cr["encoder_queue_size"]<=0: raise ConfigError("invalid camera recording rate/queue")
+    if cr["preview"]["record"]: raise ConfigError("preview recording must remain false")
+    if d["storage"]["video_container"] not in ("mkv","mp4"): raise ConfigError("video_container must be mkv or mp4")
+    for name in ("primary","wrist"):
+        prep=d["dataset_preprocessing"][name]
+        _require_keys(prep,{"output_resolution","resize_method","crop"},f"dataset_preprocessing.{name}")
+        if len(prep["output_resolution"])!=2 or any(x<=0 for x in prep["output_resolution"]):raise ConfigError("invalid dataset output resolution")
     cams=d["cameras"]
     if not isinstance(cams,list) or not cams: raise ConfigError("cameras must be non-empty")
     names=[]

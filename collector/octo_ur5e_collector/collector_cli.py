@@ -26,7 +26,7 @@ def _doctor(cfg,execute=False,replay=False):
 
 def _inspect(path):
     p=Path(path)
-    for name in ("manifest.json","status.json","demonstration/validation.json","replay/execution_summary.json"):
+    for name in ("manifest.json","status.json","demonstration/validation.json","replay/metadata.json","replay/quality_report.json","replay/execution_summary.json"):
         f=p/name
         if f.exists(): print(f"\n{name}\n{json.dumps(json.loads(f.read_text()),indent=2)}")
     t=p/"demonstration/trajectory.npz"

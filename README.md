@@ -28,3 +28,30 @@ All commands are safe/dry-run by default. `record-demo --execute` enables only
 keyboard commands to the configured digital output (DO0 on this hardware);
 only `replay --execute` may command arm motion. Read
 `docs/collector_spec.md` before hardware use.
+
+## Replay capture format
+
+Actual replay stores both 30 FPS cameras as H.264 Matroska video rather than ROS
+Image messages in MCAP. Matroska (`.mkv`) is the default because an interrupted
+recording is generally more recoverable than MP4, whose final index is normally
+written on clean close. Each accepted encoded frame has exactly one row in its
+timestamp CSV; a frame rejected by a full encoder queue is counted as dropped
+and receives no CSV row. Preview images are never recorded.
+
+```text
+replay/
+  metadata.json
+  robot_states.mcap
+  robot_states_metadata.yaml
+  primary.mkv
+  wrist.mkv
+  primary_timestamps.csv
+  wrist_timestamps.csv
+  quality_report.json
+  episode_result.json
+```
+
+At conversion time, `processing/synchronize_episode.py` creates a common 10 Hz
+timeline and selects the nearest unique source frames by ROS timestamp. It does
+not use frame-index modulo downsampling. Video is decoded to RGB uint8 only for
+selected samples; resize/crop remains a downstream configuration decision.

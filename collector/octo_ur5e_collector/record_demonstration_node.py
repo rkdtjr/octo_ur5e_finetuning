@@ -33,7 +33,10 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
         from tf2_ros import Buffer,TransformListener
     except ImportError as e: raise RuntimeError(f"ROS Python packages unavailable: {e}") from e
     root=create_episode(config,instruction); update_status(root,"recording_demo")
-    d=config.data; bag=RosbagRecorder(root/"demonstration/rosbag2",d["raw_topics"]["demonstration"],d["storage"]["rosbag_storage_id"])
+    d=config.data; bag=RosbagRecorder(
+        root/"demonstration/rosbag2",d["raw_topics"]["demonstration"],
+        d["storage"]["rosbag_storage_id"],d["storage"]["rosbag_storage_preset_profile"],
+    )
     rclpy.init(); node=Node("octo_record_demonstration")
     joint={"msg":None,"receipt":0}; samples=[]; q=KeyboardCommandQueue(d["keyboard"]); stop=threading.Event(); aborted=False; failure=None
     def joint_cb(msg): joint.update(msg=msg,receipt=node.get_clock().now().nanoseconds)

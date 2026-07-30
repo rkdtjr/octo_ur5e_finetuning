@@ -43,7 +43,24 @@ is not guaranteed.
 The deployed WITHROBOT oCam-1CGN-U-T2 exposes 8-bit GRBG Bayer frames. The
 `octo-wrist-camera` default uses its stable device link
 `/dev/v4l/by-id/usb-WITHROBOT_Inc._oCam-1CGN-U-T2_SN_3AA01020-video-index0`.
-It captures the verified 1280x800@60 GRBG stream through `v4l2-ctl --stream-mmap`,
-performs explicit OpenCV GRBG debayering, and publishes
-`/wrist_camera/image_raw` as `rgb8`. This conversion is not JPEG/PNG
-re-encoding; replay rosbag stores the resulting ROS Image message.
+It captures 1280x800 GRBG through `v4l2-ctl --stream-mmap` (30 FPS collector
+default; the camera also supports the previously verified 60 FPS mode),
+publishes the one-byte-per-pixel sensor stream on `/wrist_camera/image_raw` as
+`bayer_grbg8`, and provides a 10 Hz debayered `bgr8` preview on
+`/wrist_camera/image_color`. The replay recorder consumes only the Bayer source,
+debayers it once, and sends every accepted 30 FPS frame to H.264; neither camera
+topic nor the preview is duplicated in MCAP. Robot-state MCAP uses the
+`zstd_fast` chunk-compression preset.
+
+For replay capture, camera Image topics are not stored in MCAP. Primary
+1280x720@30 and wrist 1280x800@30 frames are converted to BGR encoder input and
+written as H.264 Matroska streams. FFmpeg probes `h264_nvenc` with a real encode
+and falls back to `libx264`; the selected encoder is recorded in metadata.
+Timestamp CSV rows are written only after the matching frame bytes have been
+accepted by FFmpeg, so CSV row count and encoded frame count are 1:1. Queue-full
+frames are omitted from CSV and counted in `quality_report.json`.
+
+Robot state topics, including `/octo_collector/robot_state`, are stored in
+`robot_states.mcap`. The JSON state topic carries ROS and monotonic timestamps,
+actual joints/velocities, TCP position/quaternion, gripper semantic state,
+replay phase, and desired controller joints when feedback provides them.

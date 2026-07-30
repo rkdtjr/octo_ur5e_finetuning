@@ -23,4 +23,6 @@ log/
 *.png
 *.db3
 *.mcap
+*.mkv
+*.mp4
 data/raw/**/rosbag2/metadata.yaml

@@ -18,6 +18,43 @@ cameras:
   - {logical_name: primary, image_topic: /camera/camera/color/image_raw, camera_info_topic: /camera/camera/color/camera_info, required: true}
   - {logical_name: wrist, image_topic: /wrist_camera/image_raw, camera_info_topic: null, required: true}
 sampling: {demonstration_rate_hz: 100.0, target_dataset_rate_hz: 10.0}
+camera_recording:
+  capture_fps: 30.0
+  dataset_rate_hz: 10.0
+  encoder_queue_size: 120
+  primary:
+    enabled: true
+    source_topic: /camera/camera/color/image_raw
+    source_encoding: auto
+    bayer_pattern: null
+    resolution: [1280, 720]
+    codec: h264
+    preferred_encoder: h264_nvenc
+    fallback_encoder: libx264
+    bitrate_mbps: 20
+    maxrate_mbps: 25
+    bufsize_mbps: 40
+    gop_size: 30
+    preset: auto
+    profile: high
+    pixel_format: yuv420p
+  wrist:
+    enabled: true
+    source_topic: /wrist_camera/image_raw
+    source_encoding: bayer_grbg8
+    bayer_pattern: GRBG
+    resolution: [1280, 800]
+    codec: h264
+    preferred_encoder: h264_nvenc
+    fallback_encoder: libx264
+    bitrate_mbps: 35
+    maxrate_mbps: 45
+    bufsize_mbps: 70
+    gop_size: 30
+    preset: auto
+    profile: high
+    pixel_format: yuv420p
+  preview: {enabled: true, fps: 10.0, record: false}
 freedrive: {activation: external, auto_enable: false, auto_disable: false}
 keyboard:
   open_keys: ["0", "o"]
@@ -53,10 +90,24 @@ replay:
 storage:
   output_root: data/raw
   rosbag_storage_id: mcap
+  rosbag_storage_preset_profile: zstd_fast
+  video_container: mkv
+  raw_state_storage: mcap
+  compression_format: zstd
+  minimum_free_space_gib: 50.0
   overwrite: false
+synchronization:
+  max_camera_time_error_ms: 40.0
+  max_primary_wrist_difference_ms: 40.0
+  max_pose_interpolation_gap_ms: 30.0
+  max_joint_interpolation_gap_ms: 30.0
+  max_gripper_age_ms: 100.0
+dataset_preprocessing:
+  primary: {output_resolution: [256, 256], resize_method: area, crop: center}
+  wrist: {output_resolution: [256, 256], resize_method: area, crop: center}
 raw_topics:
   demonstration: [/joint_states, /tf, /tf_static, /io_and_status_controller/io_states, /io_and_status_controller/robot_program_running, /io_and_status_controller/safety_mode]
-  replay: [/joint_states, /tf, /tf_static, /scaled_joint_trajectory_controller/controller_state, /io_and_status_controller/io_states, /io_and_status_controller/robot_program_running, /io_and_status_controller/safety_mode, /camera/camera/color/image_raw, /camera/camera/color/camera_info, /wrist_camera/image_raw]
+  replay: [/joint_states, /tf, /tf_static, /scaled_joint_trajectory_controller/controller_state, /io_and_status_controller/io_states, /io_and_status_controller/robot_program_running, /io_and_status_controller/safety_mode, /octo_collector/robot_state]
 action_contract:
   dimension: 7
   translation_unit: meter
