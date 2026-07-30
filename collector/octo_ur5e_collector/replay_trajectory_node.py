@@ -6,7 +6,7 @@ from .core.episode import update_status,utc_now
 from .core.trajectory import validate_trajectory_file
 from .ros_adapters.preflight import run_preflight,preflight_ok
 
-def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
+def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_start=False,move_to_start_duration_sec=8.0):
     validation=validate_trajectory_file(root,config,True)
     if not validation["valid"]:
         print(json.dumps(validation,indent=2)); return 2
@@ -63,8 +63,59 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False):
     node.create_timer(1/d["sampling"]["demonstration_rate_hz"],publish_robot_state)
     deadline=time.monotonic()+2
     while latest["q"] is None and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=.1)
-    if latest["q"] is None or np.max(np.abs(latest["q"]-q[0]))>d["replay"]["initial_joint_tolerance_rad"]:
-        node.destroy_node(); rclpy.shutdown(); raise RuntimeError("robot is not within initial joint tolerance; automatic positioning is forbidden")
+    if latest["q"] is None:
+        node.destroy_node();rclpy.shutdown();raise RuntimeError("no current joint state received")
+    initial_error=float(np.max(np.abs(latest["q"]-q[0])))
+    if initial_error>d["replay"]["initial_joint_tolerance_rad"]:
+        if not move_to_start:
+            node.destroy_node();rclpy.shutdown()
+            raise RuntimeError(
+                f"robot is not within initial joint tolerance (max error={initial_error:.4f} rad); "
+                "pass --move-to-start explicitly to command a joint-space positioning move"
+            )
+        delta=np.abs(latest["q"]-q[0]);estimated_velocity=float(np.max(delta)/move_to_start_duration_sec)
+        print(
+            "WARNING: moving to recorded start in joint space; no collision checking is performed.\n"
+            f"duration={move_to_start_duration_sec:.1f}s max_joint_delta={float(np.max(delta)):.4f}rad "
+            f"estimated_max_velocity={estimated_velocity:.4f}rad/s",
+            flush=True,
+        )
+        from .ros_adapters.trajectory_client import TrajectoryClient
+        positioning_feedback={"progress":0.0}
+        def positioning_cb(message):
+            duration=message.feedback.desired.time_from_start
+            positioning_feedback["progress"]=duration.sec+duration.nanosec/1e9
+        positioning=TrajectoryClient(node,d["ros"]["trajectory_action"],d["replay"]["controller_joint_order"],positioning_cb)
+        goal=positioning.make_goal([move_to_start_duration_sec],[q[0]])
+        send=positioning.client.send_goal_async(goal,feedback_callback=positioning_cb)
+        rclpy.spin_until_future_complete(node,send,timeout_sec=5)
+        handle=send.result()
+        if handle is None or not handle.accepted:
+            node.destroy_node();rclpy.shutdown();raise RuntimeError("move-to-start goal rejected")
+        print("move-to-start goal accepted; Ctrl+C to cancel",flush=True)
+        result=handle.get_result_async();last_second=-1
+        try:
+            deadline=time.monotonic()+move_to_start_duration_sec*10+10
+            while not result.done():
+                rclpy.spin_once(node,timeout_sec=.02)
+                second=int(positioning_feedback["progress"])
+                if second!=last_second:
+                    last_second=second;print(f"positioning progress={positioning_feedback['progress']:.2f}/{move_to_start_duration_sec:.2f}s",flush=True)
+                if time.monotonic()>deadline:raise RuntimeError("move-to-start result timeout")
+        except (KeyboardInterrupt,Exception) as e:
+            cancel=handle.cancel_goal_async();rclpy.spin_until_future_complete(node,cancel,timeout_sec=2)
+            node.destroy_node()
+            if rclpy.ok():rclpy.shutdown()
+            if isinstance(e,KeyboardInterrupt):return 130
+            raise
+        if result.result().result.error_code!=0:
+            code=result.result().result.error_code;node.destroy_node();rclpy.shutdown();raise RuntimeError(f"move-to-start failed with error_code={code}")
+        verify_deadline=time.monotonic()+1.0
+        while time.monotonic()<verify_deadline:rclpy.spin_once(node,timeout_sec=.05)
+        initial_error=float(np.max(np.abs(latest["q"]-q[0])))
+        if initial_error>d["replay"]["initial_joint_tolerance_rad"]:
+            node.destroy_node();rclpy.shutdown();raise RuntimeError(f"move-to-start completed but tolerance check failed: {initial_error:.4f} rad")
+        print(f"move-to-start complete; max joint error={initial_error:.5f}rad",flush=True)
     from .ros_adapters.digital_output_gripper import DigitalOutputGripperAdapter
     from .core.gripper import GripperController
     adapter=DigitalOutputGripperAdapter(node,{**d["gripper"],**d["ros"]}); grip=GripperController(d["gripper"],lambda value:adapter.send(value,d["gripper"]["command_timeout_sec"]))

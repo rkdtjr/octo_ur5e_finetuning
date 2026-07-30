@@ -24,7 +24,10 @@ replay/{rosbag2,events.jsonl,execution_summary.json}
 
 Replay is dry-run unless `--execute` is present. It refuses invalid trajectories
 or a robot outside initial joint tolerance and never moves to the start
-automatically. The current actual replay requires the explicit
+automatically by default. `--execute --move-to-start` is an explicit opt-in
+joint-space positioning command; its duration is set by
+`--move-to-start-duration-sec`, it rechecks start tolerance, and it has no
+collision checking. The current actual replay requires the explicit
 `--wall-clock-gripper-fallback`; controller-feedback timing remains
 `UNVERIFIED_ON_HARDWARE`, and wall-clock timing may drift under speed scaling.
 Action completion follows controller feedback so UR speed scaling may extend

@@ -14,7 +14,7 @@ def parser():
     d=sub.add_parser("doctor",help="read-only ROS/config preflight"); d.add_argument("--config",default=DEFAULT_CONFIG); d.add_argument("--replay",action="store_true")
     r=sub.add_parser("record-demo",help="record a freedrive demonstration"); r.add_argument("--config",default=DEFAULT_CONFIG); r.add_argument("--instruction",required=True); r.add_argument("--execute",action="store_true"); r.add_argument("--initial-gripper",choices=["open","closed"])
     v=sub.add_parser("validate-demo",help="validate structured trajectory"); v.add_argument("episode"); v.add_argument("--config",default=DEFAULT_CONFIG); v.add_argument("--allow-missing-bag",action="store_true")
-    x=sub.add_parser("replay",help="validate/dry-run or explicitly execute replay"); x.add_argument("episode"); x.add_argument("--config",default=DEFAULT_CONFIG); x.add_argument("--execute",action="store_true"); x.add_argument("--wall-clock-gripper-fallback",action="store_true")
+    x=sub.add_parser("replay",help="validate/dry-run or explicitly execute replay"); x.add_argument("episode"); x.add_argument("--config",default=DEFAULT_CONFIG); x.add_argument("--execute",action="store_true"); x.add_argument("--wall-clock-gripper-fallback",action="store_true"); x.add_argument("--move-to-start",action="store_true",help="explicitly command a joint-space move to the recorded start before replay"); x.add_argument("--move-to-start-duration-sec",type=float,default=8.0)
     i=sub.add_parser("inspect",help="show episode metadata"); i.add_argument("episode")
     return p
 
@@ -49,7 +49,9 @@ def main(argv=None) -> None:
                 code=run_recording(cfg,a.instruction,a.execute,a.initial_gripper)
             elif a.command=="replay":
                 from .replay_trajectory_node import run_replay
-                code=run_replay(Path(a.episode),cfg,a.execute,a.wall_clock_gripper_fallback)
+                if a.move_to_start and not a.execute:raise ValueError("--move-to-start requires --execute")
+                if a.move_to_start_duration_sec<=0:raise ValueError("--move-to-start-duration-sec must be positive")
+                code=run_replay(Path(a.episode),cfg,a.execute,a.wall_clock_gripper_fallback,a.move_to_start,a.move_to_start_duration_sec)
     except (ConfigError,ValueError,FileNotFoundError,RuntimeError) as e:
         print(f"error: {e}",file=sys.stderr); code=2
     raise SystemExit(code)
