@@ -5,6 +5,8 @@ from octo_ur5e_collector.core.trajectory import *
 from octo_ur5e_collector.core.replay_scheduler import ReplayScheduler
 from octo_ur5e_collector.core.episode import create_episode,update_status
 from octo_ur5e_collector.core.config import load_config
+from octo_ur5e_collector.ros_adapters import preflight
+from unittest.mock import patch
 def gc(**kw):
     d={"semantic_open":0,"semantic_closed":1,"output_value_for_open":0.0,"output_value_for_closed":1.0,"command_on_change_only":True,"minimum_command_interval_sec":.2};d.update(kw);return d
 def test_gripper():
@@ -28,3 +30,7 @@ def test_episode(tmp_path):
     c=load_config("collector/config/collector.yaml");c.data["storage"]["output_root"]=str(tmp_path)
     root=create_episode(c,"task","fixed");update_status(root,"aborted","test");assert json.loads((root/"status.json").read_text())["state"]=="aborted"
     with pytest.raises(FileExistsError):create_episode(c,"task","fixed")
+def test_topic_once_ignores_ros_yaml_separator():
+    result=type("Result",(),{"returncode":0,"stdout":"True\n---\n","stderr":""})()
+    with patch("subprocess.run",return_value=result):
+        assert preflight._topic_once("/program","data")==(True,"True")

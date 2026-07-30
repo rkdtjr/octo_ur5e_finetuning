@@ -28,7 +28,7 @@ gripper:
   semantic_open: 0
   semantic_closed: 1
   backend: ur_standard_digital_output
-  output_pin: 1
+  output_pin: 0
   output_value_for_open: 0.0
   output_value_for_closed: 1.0
   command_on_change_only: true

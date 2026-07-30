@@ -25,5 +25,6 @@ octo-collector replay data/raw/<episode_id>
 ```
 
 All commands are safe/dry-run by default. `record-demo --execute` enables only
-keyboard DO1 commands; only `replay --execute` may command arm motion. Read
+keyboard commands to the configured digital output (DO0 on this hardware);
+only `replay --execute` may command arm motion. Read
 `docs/collector_spec.md` before hardware use.

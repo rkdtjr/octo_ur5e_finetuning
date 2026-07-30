@@ -6,8 +6,9 @@ controller switching. Run `doctor` first.
 
 During recording, `0`/`o` is open (semantic 0), `1`/`c` is closed (semantic 1),
 `q` saves, and Escape aborts while preserving data. Without `--execute`, events
-are recorded but SetIO is never called. With it, Standard Digital Output 1 uses
-configurable polarity (default open=0, closed=1). IO readback confirms controller
+are recorded but SetIO is never called. With it, the configured Standard Digital
+Output is used (DO0 on this hardware) with configurable polarity (default
+open=0, closed=1). IO readback confirms controller
 output only—not finger width, contact, grasp success, or mechanical completion.
 
 Raw topics are stored without image re-encoding in rosbag2. `samples.npz` is the
@@ -28,7 +29,7 @@ automatically. The current actual replay requires the explicit
 `UNVERIFIED_ON_HARDWARE`, and wall-clock timing may drift under speed scaling.
 
 Before actual use confirm normal safety, program running, start joints, clear
-workspace, E-stop access, camera topics/QoS, MCAP, DO1 polarity and gripper/IO
+workspace, E-stop access, camera topics/QoS, MCAP, DO0 polarity and gripper/IO
 latency. Ctrl+C preserves raw files. For failures inspect `rosbag.log`,
 `status.json`, and `validation.json`. TF/calibration warnings mean TCP accuracy
 is not guaranteed.

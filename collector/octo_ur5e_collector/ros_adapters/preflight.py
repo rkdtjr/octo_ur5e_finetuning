@@ -14,7 +14,13 @@ def _lines(args):
 def _topic_once(topic,field):
     try:
         p=subprocess.run(["ros2","topic","echo","--once","--field",field,topic],capture_output=True,text=True,timeout=3)
-        return p.returncode==0,p.stdout.strip() or p.stderr.strip()
+        if p.returncode != 0:
+            return False,p.stderr.strip() or p.stdout.strip()
+        # `ros2 topic echo --once` terminates YAML documents with `---`.
+        # Return only the scalar field value so state comparisons do not
+        # accidentally include the document separator.
+        values=[line.strip() for line in p.stdout.splitlines() if line.strip() and line.strip()!="---"]
+        return bool(values),values[0] if values else "empty message"
     except subprocess.TimeoutExpired:
         return False,"no message within 3 seconds"
 

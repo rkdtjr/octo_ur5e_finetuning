@@ -55,7 +55,7 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
             except ValueError: pass
     bag_pid=bag.start(); start=time.monotonic(); last_progress=start
     thread=threading.Thread(target=_keyboard,args=(q,stop),daemon=True); thread.start()
-    mode="LIVE DO1" if execute else "DRY-RUN"
+    mode=f"LIVE DO{d['gripper']['output_pin']}" if execute else "DRY-RUN"
     print(
         f"episode: {root}\n"
         f"mode: {mode} | rosbag pid: {bag_pid}\n"
