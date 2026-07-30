@@ -1,0 +1,20 @@
+services:
+  octo-train:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.train
+    working_dir: /workspace
+    volumes:
+      - ../:/workspace/project
+      - ../data:/workspace/data
+      - ../runs:/workspace/runs
+      - ../cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true

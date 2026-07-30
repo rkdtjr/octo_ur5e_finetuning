@@ -1,0 +1,17 @@
+sampling:
+  good_interval_cv_max: 0.10
+  warning_interval_cv_max: 0.20
+  good_frame_drop_ratio_max: 0.01
+  warning_frame_drop_ratio_max: 0.05
+
+trajectory:
+  good_unexpected_stationary_ratio_max: 0.20
+  warning_unexpected_stationary_ratio_max: 0.35
+
+synchronization:
+  good_pose_sync_p95_ms_max: 20.0
+  warning_pose_sync_p95_ms_max: 40.0
+  good_joint_sync_p95_ms_max: 20.0
+  warning_joint_sync_p95_ms_max: 40.0
+  good_gripper_age_p95_ms_max: 50.0
+  warning_gripper_age_p95_ms_max: 100.0

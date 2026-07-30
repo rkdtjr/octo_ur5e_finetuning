@@ -1,0 +1,16 @@
+collector:
+  robot: UR5e
+  base_frame: base
+  tcp_frame: tool0
+  joint_state_topic: /joint_states
+  camera_topic: /camera/camera/color/image_raw
+  dataset_rate_hz: 10.0
+  trajectory_rate_hz: 100.0
+  instruction: "pick up the blue object"
+
+gripper:
+  open_value: 0
+  closed_value: 1
+
+storage:
+  raw_root: data/raw
