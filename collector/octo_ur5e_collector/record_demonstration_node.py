@@ -53,8 +53,15 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
         if adapter.latest_readback() is not None:
             try: semantic=grip.semantic_from_output(adapter.latest_readback().value)
             except ValueError: pass
-    bag.start(); start=time.monotonic(); thread=threading.Thread(target=_keyboard,args=(q,stop),daemon=True); thread.start()
-    print(f"episode: {root}\nkeys: 0/o open, 1/c close, q finish, Esc abort")
+    bag_pid=bag.start(); start=time.monotonic(); last_progress=start
+    thread=threading.Thread(target=_keyboard,args=(q,stop),daemon=True); thread.start()
+    mode="LIVE DO1" if execute else "DRY-RUN"
+    print(
+        f"episode: {root}\n"
+        f"mode: {mode} | rosbag pid: {bag_pid}\n"
+        "keys: 0/o open, 1/c close, q finish, Esc abort",
+        flush=True,
+    )
     period=1/d["sampling"]["demonstration_rate_hz"]; next_sample=time.monotonic()
     events=open(root/"demonstration/events.jsonl","a",encoding="utf-8")
     try:
@@ -65,10 +72,22 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
                 now=time.monotonic(); event={"event":"keyboard_"+cmd.kind,"key":cmd.key,"receipt_time_ns":node.get_clock().now().nanoseconds,"monotonic_time_ns":time.monotonic_ns(),"elapsed_sec":now-start}
                 if cmd.kind=="gripper":
                     result=grip.command_semantic(cmd.semantic_state,execute=execute); event.update({"semantic_state":cmd.semantic_state,"output_pin":d["gripper"]["output_pin"],"output_value":result.output_value,"execute":execute,"service_called":result.service_called,"service_success":result.success,"reason":result.reason})
+                    state_name="OPEN" if cmd.semantic_state==0 else "CLOSED"
+                    outcome="OK" if result.success else "FAILED"
+                    print(
+                        f"[{event['elapsed_sec']:7.3f}s] gripper {state_name} "
+                        f"(semantic={cmd.semantic_state}, DO{d['gripper']['output_pin']}={result.output_value:g}) "
+                        f"{outcome} [{result.reason or mode}]",
+                        flush=True,
+                    )
                     if result.success: semantic=cmd.semantic_state
                     elif execute: failure=result.reason; stop.set()
-                elif cmd.kind=="finish": stop.set()
-                elif cmd.kind=="abort": aborted=True; stop.set()
+                elif cmd.kind=="finish":
+                    print(f"[{event['elapsed_sec']:7.3f}s] finish requested; finalizing episode...",flush=True)
+                    stop.set()
+                elif cmd.kind=="abort":
+                    print(f"[{event['elapsed_sec']:7.3f}s] abort requested; preserving captured data...",flush=True)
+                    aborted=True; stop.set()
                 events.write(json.dumps(event)+"\n"); events.flush(); cmd=q.get_nowait()
             now=time.monotonic()
             if now>=next_sample:
@@ -88,6 +107,13 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
                 tfstamp=tf.header.stamp.sec*1_000_000_000+tf.header.stamp.nanosec; receipt=node.get_clock().now().nanoseconds
                 out=adapter.latest_readback().value if adapter and adapter.latest_readback() else grip.output_from_semantic(semantic)
                 samples.append((now-start,time.monotonic_ns(),stamp,joint["receipt"],pos,vel,tfstamp,receipt,matrix_to_ur_pose(T),semantic,out,max(0,(receipt-stamp)/1e6),max(0,(receipt-tfstamp)/1e6)))
+            if now-last_progress>=1.0:
+                print(
+                    f"[{now-start:7.1f}s] recording | valid samples: {len(samples)}"
+                    f" | gripper: {'unknown' if semantic is None else semantic}",
+                    flush=True,
+                )
+                last_progress=now
     except KeyboardInterrupt: aborted=True
     finally:
         stop.set(); events.close(); bag_code=bag.stop(); node.destroy_node(); rclpy.shutdown()
@@ -100,10 +126,22 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
         val["raw_bag_present"]=bag.metadata_exists(); val["bag_exit_code"]=bag_code
         (root/"demonstration/validation.json").write_text(json.dumps(val,indent=2)+"\n")
     else: failure=failure or "no valid samples (joint, TF, and known initial gripper are required)"
-    if failure:update_status(root,"failed",failure); print(f"failed: {failure}"); return 2
-    if aborted:update_status(root,"aborted","keyboard/Ctrl+C"); return 130
+    if failure:
+        update_status(root,"failed",failure)
+        print(f"FAILED: {failure}\nepisode preserved at: {root}",flush=True)
+        return 2
+    if aborted:
+        update_status(root,"aborted","keyboard/Ctrl+C")
+        print(f"ABORTED: captured data preserved at {root}",flush=True)
+        return 130
     update_status(root,"demo_recorded")
     update_status(root,"demo_validated" if val["valid"] else "demo_recorded",None if val["valid"] else "; ".join(val["errors"]))
+    print(
+        f"{'VALID' if val['valid'] else 'INVALID'}: samples={val['sample_count']} "
+        f"duration={val['duration_sec']:.3f}s raw_bag={val['raw_bag_present']}\n"
+        f"episode saved at: {root}",
+        flush=True,
+    )
     return 0 if val["valid"] else 2
 
 def main():
