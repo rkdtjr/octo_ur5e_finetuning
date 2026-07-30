@@ -33,3 +33,11 @@ workspace, E-stop access, camera topics/QoS, MCAP, DO0 polarity and gripper/IO
 latency. Ctrl+C preserves raw files. For failures inspect `rosbag.log`,
 `status.json`, and `validation.json`. TF/calibration warnings mean TCP accuracy
 is not guaranteed.
+
+The deployed WITHROBOT oCam-1CGN-U-T2 exposes 8-bit GRBG Bayer frames. The
+`octo-wrist-camera` default uses its stable device link
+`/dev/v4l/by-id/usb-WITHROBOT_Inc._oCam-1CGN-U-T2_SN_3AA01020-video-index0`.
+It captures the verified 1280x800@60 GRBG stream through `v4l2-ctl --stream-mmap`,
+performs explicit OpenCV GRBG debayering, and publishes
+`/wrist_camera/image_raw` as `rgb8`. This conversion is not JPEG/PNG
+re-encoding; replay rosbag stores the resulting ROS Image message.
