@@ -27,6 +27,12 @@ or a robot outside initial joint tolerance and never moves to the start
 automatically. The current actual replay requires the explicit
 `--wall-clock-gripper-fallback`; controller-feedback timing remains
 `UNVERIFIED_ON_HARDWARE`, and wall-clock timing may drift under speed scaling.
+Action completion follows controller feedback so UR speed scaling may extend
+wall-clock duration. Once controller progress reaches planned duration, result
+waiting is bounded by `result_timeout_margin_sec`. Only when feedback is absent
+does the wall-clock fallback use
+`planned_duration * result_timeout_factor + result_timeout_margin_sec`.
+Timeout causes goal cancellation, bag shutdown, and a failed summary.
 
 Before actual use confirm normal safety, program running, start joints, clear
 workspace, E-stop access, camera topics/QoS, MCAP, DO0 polarity and gripper/IO

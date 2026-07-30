@@ -44,6 +44,8 @@ replay:
   start_settle_sec: 1.0
   end_settle_sec: 1.0
   feedback_stale_sec: 0.5
+  result_timeout_factor: 2.0
+  result_timeout_margin_sec: 5.0
   max_joint_velocity_rad_s: null
   max_joint_acceleration_rad_s2: null
   execute_requires_program_running: true
