@@ -10,7 +10,7 @@ where a commit could not be established. Re-check before changing the contract.
 | OFFICIAL_OCTO | New observation/action example | https://github.com/octo-models/octo/blob/main/examples/02_finetune_new_observation_action.py | main (SHA unavailable) | n/a | `make_single_dataset`, observation/proprio/language keys, new head | ALOHA horizon 50/action 14/L1 head are not copied |
 | OFFICIAL_OCTO | Fine-tune config | https://github.com/octo-models/octo/blob/main/scripts/configs/finetune_config.py | main (SHA unavailable) | n/a | window/horizon, standardization, normalization mask and modes | UR action contract is 7D and mask length is validated |
 | OFFICIAL_OCTO | Dataset implementation | https://github.com/octo-models/octo/blob/main/octo/data/dataset.py | main (SHA unavailable) | n/a | RLDS loading/data transformations | RLDS work is deferred |
-| OFFICIAL_UR | UR ROS 2 Driver controllers | https://docs.universal-robots.com/Universal_Robots_ROS_Documentation/jazzy/doc/ur_robot_driver/ur_controllers/doc/index.html | Jazzy docs | ur_robot_driver 3.8.0 | GPIO topics/SetIO and trajectory controller | Hardware inspection selected DO0; polarity remains configuration |
+| PROJECT_DECISION | Deployed gripper wiring | hardware test 2026-07-30 | DO0 | verified by operator | gripper output mapping | semantic open=0 maps to DO0=1; semantic closed=1 maps to DO0=0 |
 | OFFICIAL_UR | Driver source | https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver/tree/jazzy | jazzy (SHA unavailable) | 3.8.0 | adapter naming and controller behavior | freedrive/controller switching is external |
 | OFFICIAL_UR | UR axis-angle representation | https://www.universal-robots.com/articles/ur/programming/axis-angle-representation/ | current article | n/a | TCP `[x,y,z,rx,ry,rz]` rotation vector | transform convention is explicitly `T_A_B` |
 | OFFICIAL_UR | Installed SetIO/IOStates interfaces | local `ros2 interface show` | Jazzy packages | ur_msgs 2.5.0 | `FUN_SET_DIGITAL_OUT=1`, pin/state fields, digital output readback | readback is not mechanical state |
@@ -22,7 +22,7 @@ where a commit could not be established. Re-check before changing the contract.
 ## UNVERIFIED_ON_HARDWARE
 
 - SetIO availability during the chosen external freedrive method
-- physical DO0 polarity, gripper delay, and IOStates readback latency
+- gripper mechanical delay and IOStates readback latency
 - program/safety topic values and controller feedback progress during scaling
 - primary/wrist topic names, message counts, and QoS
 - MCAP recording with the deployed camera bandwidth

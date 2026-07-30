@@ -7,7 +7,7 @@ def test_valid(): assert load_config(BASE).data["schema_version"]==2
 def test_invalid(tmp_path,change):
     d=yaml.safe_load(BASE.read_text())
     if change=="unknown":d["bogus"]=1
-    if change=="polarity":d["gripper"]["output_value_for_closed"]=0.0
+    if change=="polarity":d["gripper"]["output_value_for_closed"]=1.0
     if change=="mask":d["action_contract"]["normalization_mask"]=[True]
     if change=="joints":d["robot"]["joint_names"]=["x"]*6
     if change=="rate":d["sampling"]["demonstration_rate_hz"]=0

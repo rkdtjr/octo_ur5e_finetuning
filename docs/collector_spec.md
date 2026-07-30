@@ -7,8 +7,8 @@ controller switching. Run `doctor` first.
 During recording, `0`/`o` is open (semantic 0), `1`/`c` is closed (semantic 1),
 `q` saves, and Escape aborts while preserving data. Without `--execute`, events
 are recorded but SetIO is never called. With it, the configured Standard Digital
-Output is used (DO0 on this hardware) with configurable polarity (default
-open=0, closed=1). IO readback confirms controller
+Output is used (DO0 on this hardware) with configurable polarity (verified
+open=1, closed=0). IO readback confirms controller
 output only—not finger width, contact, grasp success, or mechanical completion.
 
 Raw topics are stored without image re-encoding in rosbag2. `samples.npz` is the
