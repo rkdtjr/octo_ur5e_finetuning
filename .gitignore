@@ -10,6 +10,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+*.egg-info/
 build/
 install/
 log/
@@ -20,3 +21,6 @@ log/
 *.jpg
 *.jpeg
 *.png
+*.db3
+*.mcap
+data/raw/**/rosbag2/metadata.yaml

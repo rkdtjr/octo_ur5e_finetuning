@@ -10,3 +10,20 @@ Pipeline:
 7. Docker-based Octo fine-tuning
 8. Offline validation
 9. UR5e deployment
+
+## Collector v2 quick start
+
+The operator enables freedrive externally. The collector never manages power,
+brakes, PolyScope programs, freedrive, or controller switching.
+
+```bash
+python -m pip install -e .
+octo-collector doctor --config collector/config/collector.yaml
+octo-collector record-demo --config collector/config/collector.yaml --instruction "pick up the blue object"
+octo-collector validate-demo data/raw/<episode_id>
+octo-collector replay data/raw/<episode_id>
+```
+
+All commands are safe/dry-run by default. `record-demo --execute` enables only
+keyboard DO1 commands; only `replay --execute` may command arm motion. Read
+`docs/collector_spec.md` before hardware use.
