@@ -1,7 +1,4 @@
-"""Implementation placeholder."""
+"""Compatibility module exposing the TFDS builder class."""
+from .tfds_builder import Ur5ePick
 
-def main() -> None:
-    raise NotImplementedError("Implementation pending.")
-
-if __name__ == "__main__":
-    main()
+__all__=["Ur5ePick"]

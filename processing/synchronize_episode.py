@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ import numpy as np
 import yaml
 
 try:
-    from .build_actions import action_statistics, build_relative_actions
+    from .build_actions import action_statistics, build_relative_actions_masked
     from .evaluate_quality import evaluate_processed_arrays, load_thresholds
     from .interpolation import (
         interpolate_linear,
@@ -23,7 +24,7 @@ try:
     )
     from .mcap_json_reader import read_json_string_topic
 except ImportError:  # direct script execution
-    from build_actions import action_statistics, build_relative_actions
+    from build_actions import action_statistics, build_relative_actions_masked
     from evaluate_quality import evaluate_processed_arrays, load_thresholds
     from interpolation import (
         interpolate_linear,
@@ -54,6 +55,16 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"expected object in {path}")
     return value
+
+
+def source_fingerprint(episode_dir: str | Path) -> str:
+    episode=Path(episode_dir);replay=episode/"replay"
+    candidates=[episode/"config_resolved.yaml",episode/"manifest.json",replay/"metadata.json",replay/"robot_states.mcap",replay/"primary_timestamps.csv",replay/"wrist_timestamps.csv",replay/"primary.mkv",replay/"wrist.mkv"]
+    records=[]
+    for path in candidates:
+        if path.exists():
+            stat=path.stat();records.append((str(path.relative_to(episode)),stat.st_size,stat.st_mtime_ns))
+    return hashlib.sha256(json.dumps(records,separators=(",",":"),sort_keys=True).encode()).hexdigest()
 
 
 def read_camera_timestamps(path: str | Path) -> CameraTimestamps:
@@ -147,6 +158,20 @@ def build_robot_sources(states: list[dict]) -> dict[str, np.ndarray]:
             [state["gripper_state"] for state in gripper_states], dtype=np.int8
         ),
     }
+
+
+def robot_match(states: list[dict], target_ns: int, thresholds: dict) -> dict | None:
+    """Compatibility adapter for the collector-era single timestamp API."""
+    try:
+        sources=build_robot_sources(states)
+        joint,joint_diag=interpolate_linear(sources["joint_times_ns"],sources["joint_positions"],target_ns)
+        position,pose_diag=interpolate_linear(sources["pose_times_ns"],sources["tcp_positions"],target_ns)
+        quaternion,_=interpolate_quaternion(sources["pose_times_ns"],sources["tcp_quaternions_xyzw"],target_ns)
+        gripper,gripper_age=latest_discrete(sources["gripper_times_ns"],sources["gripper_states"],target_ns)
+    except ValueError:return None
+    pose_gap=pose_diag.bracket_span_ns/1e6;joint_gap=joint_diag.bracket_span_ns/1e6;gripper_age_ms=gripper_age/1e6
+    valid=pose_gap<=thresholds["max_pose_interpolation_gap_ms"] and joint_gap<=thresholds["max_joint_interpolation_gap_ms"] and gripper_age_ms<=thresholds["max_gripper_age_ms"]
+    return {"tcp_position":position.tolist(),"tcp_quaternion_xyzw":quaternion.tolist(),"joint_position":joint.tolist(),"gripper_state":int(gripper),"pose_interpolation_gap_ms":pose_gap,"joint_interpolation_gap_ms":joint_gap,"gripper_age_ms":gripper_age_ms,"robot_valid":bool(valid)}
 
 
 def _match_robot(
@@ -357,14 +382,13 @@ def synchronize_episode(
     if require_wrist:
         observation_valid &= wrist_valid
 
-    actions = build_relative_actions(
+    actions,transition_valid = build_relative_actions_masked(
         robot["tcp_positions"],
         robot["tcp_quaternions_xyzw"],
         robot["gripper_states"],
+        observation_valid,
         frame=action_frame,
-        gripper_target="next",
     )
-    transition_valid = observation_valid[:-1] & observation_valid[1:]
     transition_count = len(actions)
     segment_ids, valid_segments = _contiguous_valid_segments(transition_valid)
     segment_is_first = np.zeros(transition_count, dtype=bool)
@@ -405,9 +429,9 @@ def synchronize_episode(
         "joint_interpolation_span_ms": _transition_view(robot["joint_interpolation_span_ms"]).astype(np.float32),
         "gripper_age_ms": _transition_view(robot["gripper_age_ms"]).astype(np.float32),
         "tcp_source_age_ms": _transition_view(robot["tcp_source_age_ms"]).astype(np.float32),
-        "is_first": np.arange(transition_count) == 0,
-        "is_last": np.arange(transition_count) == transition_count - 1,
-        "is_terminal": np.arange(transition_count) == transition_count - 1,
+        "is_first": segment_is_first.copy(),
+        "is_last": segment_is_last.copy(),
+        "is_terminal": segment_is_last.copy(),
     }
 
     output = Path(output_dir).resolve() if output_dir else episode / "processed"
@@ -418,7 +442,7 @@ def synchronize_episode(
     report = evaluate_processed_arrays(
         arrays, thresholds, require_wrist=require_wrist
     )
-    statistics = action_statistics(actions)
+    statistics = action_statistics(actions[transition_valid])
     report.update(
         {
             "episode_id": manifest["episode_id"],
@@ -445,8 +469,13 @@ def synchronize_episode(
         json.dumps(statistics, indent=2) + "\n", encoding="utf-8"
     )
 
+    camera_metadata=metadata.get("cameras",{})
+    primary_metadata=camera_metadata.get("primary")
+    if not primary_metadata:raise ValueError("replay metadata lacks primary camera")
+    wrist_metadata=camera_metadata.get("wrist")
     processing_manifest = {
         "schema_version": 1,
+        "source_fingerprint": source_fingerprint(episode),
         "episode_id": manifest["episode_id"],
         "source_episode": str(episode),
         "instruction": manifest["instruction"],
@@ -476,10 +505,10 @@ def synchronize_episode(
         },
         "source_files": {
             "robot_states": str(replay / metadata["robot_state_file"]),
-            "primary_video": str(replay / metadata["cameras"]["primary"]["file"]),
-            "primary_timestamps": str(replay / metadata["cameras"]["primary"]["timestamps"]),
-            "wrist_video": str(replay / metadata["cameras"]["wrist"]["file"]),
-            "wrist_timestamps": str(replay / metadata["cameras"]["wrist"]["timestamps"]),
+            "primary_video": str(replay / primary_metadata["file"]),
+            "primary_timestamps": str(replay / primary_metadata["timestamps"]),
+            "wrist_video": str(replay / wrist_metadata["file"]) if wrist_metadata else None,
+            "wrist_timestamps": str(replay / wrist_metadata["timestamps"]) if wrist_metadata else None,
         },
         "outputs": {
             "npz": npz_path.name,
@@ -547,6 +576,7 @@ def synchronize_episode(
         "valid_transition_count": int(transition_valid.sum()),
         "valid_ratio": float(transition_valid.mean()),
         "quality": report["overall"],
+        "quality_grade": report["quality_grade"],
         "verdict": report["verdict"],
         "warnings": report["warnings"],
         "hard_failures": report["hard_failures"],

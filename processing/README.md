@@ -20,14 +20,19 @@ the selected video frames and package these already-computed arrays.
 pip install "numpy<2" scipy PyYAML
 ```
 
-OpenCV is not required by processing because videos are not decoded here.
+OpenCV is not required for synchronization/action processing. The optional
+`processing.convert_to_rlds.decode_selected_rgb` boundary helper imports OpenCV
+only when a later RLDS builder asks it to decode selected frames.
+
+Quality reports retain the detailed `ACCEPTED/WARN_ACCEPTED/REJECT` result and
+also expose the collector-compatible `GOOD/WARNING/BAD` `quality_grade`.
 
 ## Process one episode
 
-Run from the project root, where the `processing/` directory is located:
+After installing the project in the virtual environment, run from any directory:
 
 ```bash
-python -m processing.synchronize_episode \
+octo-process-episode \
   data/raw/20260731_184359_c25768c6
 ```
 
@@ -57,7 +62,7 @@ python -m processing.synchronize_episode EPISODE --require-wrist
 ## Process all episodes in a directory
 
 ```bash
-python -m processing.batch_process data/raw \
+octo-process-batch data/raw \
   --summary data/processing_summary.json
 ```
 

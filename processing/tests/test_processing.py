@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from processing.build_actions import build_relative_actions
+from processing.build_actions import build_relative_actions,build_relative_actions_masked
 from processing.interpolation import (
     interpolate_linear,
     interpolate_quaternion,
@@ -47,3 +47,15 @@ def test_action_uses_next_gripper_state():
     assert actions.shape == (2, 7)
     assert np.allclose(actions[:, 0], 0.01)
     assert actions[:, 6].tolist() == [1.0, 1.0]
+
+
+def test_invalid_observation_creates_finite_masked_action_gap():
+    positions=np.array([[0.,0,0],[.01,0,0],[np.nan,0,0],[.03,0,0],[.04,0,0]])
+    quaternions=np.tile([0.,0,0,1.],(5,1));gripper=np.array([0,0,-1,1,1])
+    actions,valid=build_relative_actions_masked(
+        positions,quaternions,gripper,np.array([True,True,False,True,True]),frame="tool"
+    )
+    assert valid.tolist()==[True,False,False,True]
+    assert np.isfinite(actions).all()
+    assert np.all(actions[~valid]==0)
+    assert actions[0,0]>0 and actions[-1,0]>0

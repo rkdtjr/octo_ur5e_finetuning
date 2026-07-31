@@ -65,6 +65,33 @@ def build_relative_actions(
     return actions
 
 
+def build_relative_actions_masked(
+    tcp_positions: np.ndarray,
+    tcp_quaternions_xyzw: np.ndarray,
+    gripper_states: np.ndarray,
+    observation_valid: np.ndarray,
+    *,
+    frame: str = "tool",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build finite actions only where both endpoint observations are valid.
+
+    Invalid transitions receive an all-zero placeholder and must be excluded by
+    the returned mask. This preserves timeline continuity and lets downstream
+    code split valid contiguous segments without deleting timestamps.
+    """
+    positions=np.asarray(tcp_positions);quaternions=np.asarray(tcp_quaternions_xyzw)
+    gripper=np.asarray(gripper_states);valid=np.asarray(observation_valid,dtype=bool)
+    if valid.shape!=(len(positions),):raise ValueError("observation_valid shape mismatch")
+    transition_valid=valid[:-1]&valid[1:]
+    actions=np.zeros((max(0,len(positions)-1),ACTION_DIMENSION),dtype=np.float32)
+    for index in np.flatnonzero(transition_valid):
+        actions[index]=build_relative_actions(
+            positions[index:index+2],quaternions[index:index+2],gripper[index:index+2],
+            frame=frame,gripper_target="next",
+        )[0]
+    return actions,transition_valid
+
+
 def action_statistics(actions: np.ndarray) -> dict:
     values = np.asarray(actions, dtype=np.float64)
     if values.ndim != 2 or values.shape[1] != ACTION_DIMENSION:

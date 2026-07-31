@@ -71,3 +71,34 @@ selected samples; resize/crop remains a downstream configuration decision.
 `overall` value is `GOOD`, `WARNING`, or `BAD`. Each check records its measured
 value and thresholds. `execution_summary.json` repeats the compact
 `quality_grade`, `quality_verdict`, and `quality_problems` fields.
+
+## Processing and RLDS
+
+Use `octo-dataset doctor data/raw` to inspect readiness. `octo-dataset build`
+is dry-run by default; with `--execute` it incrementally processes missing
+episodes, keeps `GOOD/WARNING` valid segments, validates one decoded trajectory,
+and writes the TFDS/RLDS dataset. See `rlds_builder/README.md` for the schema and
+training-workstation dependencies.
+
+### Fine-tuning
+
+Build an episode-level split so demonstrations from one recording never occur
+in both train and validation:
+
+```bash
+octo-dataset build data/raw --output data/rlds/ur5e_pick_3val \
+  --include-grades GOOD,WARNING --val-episodes 3 --execute
+octo-check-dataset data/rlds/ur5e_pick_3val/ur5e_pick/1.0.0
+```
+
+The training integration uses the official Octo fine-tuning entrypoint,
+`octo-small-1.5`, a two-frame history, four-action horizon, and 7D UR5e action
+contract. It defaults to `head_only` and the primary camera for the small-data
+diagnostic. W&B is disabled for smoke runs and offline for longer local runs.
+
+```bash
+octo-train --smoke
+octo-train --execute --smoke
+octo-train --execute
+octo-plot-metrics runs/octo_ur5e/pick/<run_name>
+```

@@ -88,6 +88,8 @@ def evaluate_processed_arrays(
         return {
             "schema_version": 1,
             "overall": "REJECT",
+            "quality_grade": "BAD",
+            "quality_summary": "BAD: required processed arrays are missing",
             "verdict": "not_ready",
             "hard_failures": ["missing_arrays:" + ",".join(missing)],
             "warnings": [],
@@ -116,6 +118,7 @@ def evaluate_processed_arrays(
     synchronization = thresholds["synchronization"]
     limits = thresholds["actions"]
     minimum = thresholds["minimum"]
+    valid_actions=actions[valid] if actions.shape==(len(timestamps),7) and valid.shape==(len(timestamps),) else np.empty((0,7))
     checks = [
         _rated_upper(
             "primary_time_error_p95",
@@ -168,14 +171,14 @@ def evaluate_processed_arrays(
         ),
         _rated_upper(
             "translation_action_norm_max",
-            _maximum(np.linalg.norm(actions[:, :3], axis=1)) if len(actions) else None,
+            _maximum(np.linalg.norm(valid_actions[:, :3], axis=1)) if len(valid_actions) else None,
             limits["translation_norm_warning_m"],
             limits["translation_norm_reject_m"],
             "m/step",
         ),
         _rated_upper(
             "rotation_action_norm_max",
-            _maximum(np.linalg.norm(actions[:, 3:6], axis=1)) if len(actions) else None,
+            _maximum(np.linalg.norm(valid_actions[:, 3:6], axis=1)) if len(valid_actions) else None,
             limits["rotation_norm_warning_rad"],
             limits["rotation_norm_reject_rad"],
             "rad/step",
@@ -223,9 +226,13 @@ def evaluate_processed_arrays(
     else:
         overall, verdict = "ACCEPTED", "ready"
 
+    grade={"ACCEPTED":"GOOD","WARN_ACCEPTED":"WARNING","REJECT":"BAD"}[overall]
+    counts={rating:sum(item["rating"]==rating for item in checks) for rating in ("PASS","WARN","REJECT")}
     return {
         "schema_version": 1,
         "overall": overall,
+        "quality_grade": grade,
+        "quality_summary": f"{grade}: {counts['PASS']} pass, {counts['WARN']} warning, {counts['REJECT']} reject",
         "verdict": verdict,
         "require_wrist": bool(require_wrist),
         "transition_count": int(len(timestamps)),
