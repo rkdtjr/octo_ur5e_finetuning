@@ -4,5 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octo-ur5e-finetuning"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
+dependencies = ["numpy>=1.23,<2", "PyYAML>=6", "scipy>=1.9"]
+
+[project.scripts]
+octo-collector = "octo_ur5e_collector.collector_cli:main"
+octo-wrist-camera = "octo_ur5e_collector.wrist_bayer_camera_node:main"
+
+[tool.setuptools.packages.find]
+where = ["collector"]

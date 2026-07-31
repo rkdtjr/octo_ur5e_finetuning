@@ -1,0 +1,128 @@
+=== DEVICE ===
+/dev/v4l/by-id/usb-WITHROBOT_Inc._oCam-1CGN-U-T2_SN_3AA01020-video-index0
+/dev/video6
+
+=== ALL ===
+Driver Info:
+	Driver name      : uvcvideo
+	Card type        : oCam-1CGN-U-T2
+	Bus info         : usb-0000:00:14.0-5.1
+	Driver version   : 7.0.12
+	Capabilities     : 0x84a00001
+		Video Capture
+		Metadata Capture
+		Streaming
+		Extended Pix Format
+		Device Capabilities
+	Device Caps      : 0x04200001
+		Video Capture
+		Streaming
+		Extended Pix Format
+Media Driver Info:
+	Driver name      : uvcvideo
+	Model            : oCam-1CGN-U-T2
+	Serial           : SN_3AA01020
+	Bus info         : usb-0000:00:14.0-5.1
+	Media version    : 7.0.12
+	Hardware revision: 0x00002311 (8977)
+	Driver version   : 7.0.12
+Interface Info:
+	ID               : 0x03000002
+	Type             : V4L Video
+Entity Info:
+	ID               : 0x00000001 (1)
+	Name             : oCam-1CGN-U-T2
+	Function         : V4L2 I/O
+	Flags            : default
+	Pad 0x01000007   : 0: Sink
+	  Link 0x02000010: from remote pad 0x100000a of entity 'Extension 3' (Video Pixel Formatter): Data, Enabled, Immutable
+Priority: 2
+Video input : 0 (Camera 1: ok)
+Format Video Capture:
+	Width/Height      : 1280/800
+	Pixel Format      : 'GRBG' (8-bit Bayer GRGR/BGBG)
+	Field             : None
+	Bytes per Line    : 1280
+	Size Image        : 1024000
+	Colorspace        : sRGB
+	Transfer Function : Default (maps to sRGB)
+	YCbCr/HSV Encoding: Default (maps to ITU-R 601)
+	Quantization      : Default (maps to Full Range)
+	Flags             : 
+Crop Capability Video Capture:
+	Bounds      : Left 0, Top 0, Width 1280, Height 800
+	Default     : Left 0, Top 0, Width 1280, Height 800
+	Pixel Aspect: 1/1
+Selection Video Capture: crop_default, Left 0, Top 0, Width 1280, Height 800, Flags: 
+Selection Video Capture: crop_bounds, Left 0, Top 0, Width 1280, Height 800, Flags: 
+Streaming Parameters Video Capture:
+	Capabilities     : timeperframe
+	Frames per second: 30.000 (30/1)
+	Read buffers     : 0
+
+User Controls
+
+                    red_balance 0x0098090e (int)    : min=0 max=250 step=1 default=138 value=138 flags=0x00001000
+                   blue_balance 0x0098090f (int)    : min=0 max=250 step=1 default=152 value=152 flags=0x00001000
+                           gain 0x00980913 (int)    : min=0 max=255 step=1 default=64 value=64 flags=0x00001000
+
+Camera Controls
+
+                  auto_exposure 0x009a0901 (menu)   : min=0 max=3 default=1 value=1 (Manual Mode)
+				1: Manual Mode
+				3: Aperture Priority Mode
+         exposure_time_absolute 0x009a0902 (int)    : min=1 max=1000 step=1 default=55 value=55 flags=0x00001000
+
+=== CONTROLS ===
+
+User Controls
+
+                    red_balance 0x0098090e (int)    : min=0 max=250 step=1 default=138 value=138 flags=0x00001000
+                   blue_balance 0x0098090f (int)    : min=0 max=250 step=1 default=152 value=152 flags=0x00001000
+                           gain 0x00980913 (int)    : min=0 max=255 step=1 default=64 value=64 flags=0x00001000
+
+Camera Controls
+
+                  auto_exposure 0x009a0901 (menu)   : min=0 max=3 default=1 value=1 (Manual Mode)
+         exposure_time_absolute 0x009a0902 (int)    : min=1 max=1000 step=1 default=55 value=55 flags=0x00001000
+
+=== FORMATS ===
+ioctl: VIDIOC_ENUM_FMT
+	Type: Video Capture
+
+	[0]: 'GRBG' (8-bit Bayer GRGR/BGBG)
+		Size: Discrete 1280x800
+			Interval: Discrete 0.017s (60.000 fps)
+			Interval: Discrete 0.020s (50.000 fps)
+			Interval: Discrete 0.033s (30.000 fps)
+			Interval: Discrete 0.040s (25.000 fps)
+			Interval: Discrete 0.067s (15.000 fps)
+		Size: Discrete 1280x720
+			Interval: Discrete 0.017s (60.000 fps)
+			Interval: Discrete 0.020s (50.000 fps)
+			Interval: Discrete 0.033s (30.000 fps)
+			Interval: Discrete 0.040s (25.000 fps)
+			Interval: Discrete 0.067s (15.000 fps)
+		Size: Discrete 640x480
+			Interval: Discrete 0.010s (100.000 fps)
+			Interval: Discrete 0.011s (90.000 fps)
+			Interval: Discrete 0.017s (60.000 fps)
+			Interval: Discrete 0.020s (50.000 fps)
+			Interval: Discrete 0.033s (30.000 fps)
+			Interval: Discrete 0.040s (25.000 fps)
+			Interval: Discrete 0.067s (15.000 fps)
+		Size: Discrete 640x400
+			Interval: Discrete 0.010s (100.000 fps)
+			Interval: Discrete 0.011s (90.000 fps)
+			Interval: Discrete 0.017s (60.000 fps)
+			Interval: Discrete 0.020s (50.000 fps)
+			Interval: Discrete 0.033s (30.000 fps)
+			Interval: Discrete 0.040s (25.000 fps)
+			Interval: Discrete 0.067s (15.000 fps)
+		Size: Discrete 320x240
+			Interval: Discrete 0.006s (180.000 fps)
+			Interval: Discrete 0.007s (150.000 fps)
+			Interval: Discrete 0.008s (120.000 fps)
+			Interval: Discrete 0.010s (100.000 fps)
+			Interval: Discrete 0.017s (60.000 fps)
+			Interval: Discrete 0.020s (50.000 fps)

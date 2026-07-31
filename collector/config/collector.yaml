@@ -1,16 +1,128 @@
-collector:
-  robot: UR5e
+schema_version: 2
+robot:
+  name: ur5e
   base_frame: base
   tcp_frame: tool0
+  joint_names: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+ros:
   joint_state_topic: /joint_states
-  camera_topic: /camera/camera/color/image_raw
+  tf_topic: /tf
+  tf_static_topic: /tf_static
+  controller_state_topic: /scaled_joint_trajectory_controller/controller_state
+  trajectory_action: /scaled_joint_trajectory_controller/follow_joint_trajectory
+  io_states_topic: /io_and_status_controller/io_states
+  set_io_service: /io_and_status_controller/set_io
+  robot_program_running_topic: /io_and_status_controller/robot_program_running
+  safety_mode_topic: /io_and_status_controller/safety_mode
+cameras:
+  - {logical_name: primary, image_topic: /camera/camera/color/image_raw, camera_info_topic: /camera/camera/color/camera_info, required: true}
+  - {logical_name: wrist, image_topic: /wrist_camera/image_raw, camera_info_topic: null, required: true}
+sampling: {demonstration_rate_hz: 100.0, target_dataset_rate_hz: 10.0}
+camera_recording:
+  capture_fps: 30.0
   dataset_rate_hz: 10.0
-  trajectory_rate_hz: 100.0
-  instruction: "pick up the blue object"
-
+  encoder_queue_size: 120
+  primary:
+    enabled: true
+    source_topic: /camera/camera/color/image_raw
+    source_encoding: auto
+    bayer_pattern: null
+    resolution: [1280, 720]
+    codec: h264
+    preferred_encoder: h264_nvenc
+    fallback_encoder: libx264
+    bitrate_mbps: 20
+    maxrate_mbps: 25
+    bufsize_mbps: 40
+    gop_size: 30
+    preset: auto
+    profile: high
+    pixel_format: yuv420p
+  wrist:
+    enabled: true
+    source_topic: /wrist_camera/image_raw
+    source_encoding: bayer_grbg8
+    bayer_pattern: GRBG
+    resolution: [1280, 800]
+    codec: h264
+    preferred_encoder: h264_nvenc
+    fallback_encoder: libx264
+    bitrate_mbps: 35
+    maxrate_mbps: 45
+    bufsize_mbps: 70
+    gop_size: 30
+    preset: auto
+    profile: high
+    pixel_format: yuv420p
+  preview: {enabled: true, fps: 10.0, record: false}
+freedrive:
+  activation: controller
+  auto_enable: false
+  auto_disable: true
+  controller_manager_switch_service: /controller_manager/switch_controller
+  controller_name: freedrive_mode_controller
+  motion_controller_name: scaled_joint_trajectory_controller
+  enable_topic: /freedrive_mode_controller/enable_freedrive_mode
+  keepalive_rate_hz: 2.0
+  switch_timeout_sec: 5.0
+keyboard:
+  open_keys: ["0", "o"]
+  close_keys: ["1", "c"]
+  finish_keys: ["q"]
+  abort_keys: ["esc"]
 gripper:
-  open_value: 0
-  closed_value: 1
-
+  semantic_open: 0
+  semantic_closed: 1
+  backend: ur_standard_digital_output
+  output_pin: 0
+  output_value_for_open: 1.0
+  output_value_for_closed: 0.0
+  command_on_change_only: true
+  minimum_command_interval_sec: 0.2
+  command_timeout_sec: 2.0
+  confirmation_timeout_sec: 1.0
+  actuation_settle_sec: 5.0
+  readback_from_io_states: true
+  initial_state_source: io_readback
+replay:
+  controller_joint_order: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+  initial_joint_tolerance_rad: 0.05
+  speed_scale: 1.0
+  start_settle_sec: 1.0
+  end_settle_sec: 1.0
+  feedback_stale_sec: 0.5
+  result_timeout_factor: 2.0
+  result_timeout_margin_sec: 5.0
+  max_joint_velocity_rad_s: null
+  max_joint_acceleration_rad_s2: null
+  execute_requires_program_running: true
+  execute_requires_normal_safety: true
 storage:
-  raw_root: data/raw
+  output_root: data/raw
+  rosbag_storage_id: mcap
+  rosbag_storage_preset_profile: zstd_fast
+  video_container: mkv
+  raw_state_storage: mcap
+  compression_format: zstd
+  minimum_free_space_gib: 50.0
+  overwrite: false
+synchronization:
+  max_camera_time_error_ms: 40.0
+  max_primary_wrist_difference_ms: 40.0
+  max_pose_interpolation_gap_ms: 30.0
+  max_joint_interpolation_gap_ms: 30.0
+  max_gripper_age_ms: 100.0
+  max_tcp_age_ms: 100.0
+dataset_preprocessing:
+  primary: {output_resolution: [256, 256], resize_method: area, crop: center}
+  wrist: {output_resolution: [256, 256], resize_method: area, crop: center}
+raw_topics:
+  demonstration: [/joint_states, /tf, /tf_static, /io_and_status_controller/io_states, /io_and_status_controller/robot_program_running, /io_and_status_controller/safety_mode]
+  replay: [/joint_states, /tf, /tf_static, /scaled_joint_trajectory_controller/controller_state, /io_and_status_controller/io_states, /io_and_status_controller/robot_program_running, /io_and_status_controller/safety_mode, /octo_collector/robot_state]
+action_contract:
+  dimension: 7
+  translation_unit: meter
+  rotation_representation: rotation_vector
+  delta_frame: tool
+  gripper_index: 6
+  normalization_mask: [true, true, true, true, true, true, false]
