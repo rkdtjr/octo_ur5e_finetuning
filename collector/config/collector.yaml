@@ -81,6 +81,7 @@ gripper:
   minimum_command_interval_sec: 0.2
   command_timeout_sec: 2.0
   confirmation_timeout_sec: 1.0
+  actuation_settle_sec: 5.0
   readback_from_io_states: true
   initial_state_source: io_readback
 replay:

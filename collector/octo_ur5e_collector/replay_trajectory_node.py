@@ -6,13 +6,16 @@ from .core.episode import update_status,utc_now
 from .core.trajectory import validate_trajectory_file
 from .ros_adapters.preflight import run_preflight,preflight_ok
 
-def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_start=False,move_to_start_duration_sec=8.0):
+def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_start=False,move_to_start_duration_sec=8.0,return_to_start=False,return_to_start_duration_sec=8.0):
     command_wall_start=time.monotonic()
     validation=validate_trajectory_file(root,config,True)
     if not validation["valid"]:
         print(json.dumps(validation,indent=2)); return 2
     z=np.load(root/"demonstration/trajectory.npz"); times=z["time_from_start_sec"]/config.replay["speed_scale"]; q=z["joint_position"]; g=z["gripper_semantic_state"]
-    events=validation["gripper_transitions"]
+    events=list(validation["gripper_transitions"])
+    open_state=int(config.gripper["semantic_open"])
+    if int(g[0])!=open_state:
+        events.insert(0,{"index":0,"time_sec":0.0,"semantic_state":int(g[0]),"reason":"restore_recorded_initial_state"})
     print(f"{'EXECUTE' if execute else 'DRY-RUN'} points={len(times)} duration={times[-1]:.3f}s max_velocity={validation['max_velocity_rad_s']:.4f} gripper_events={events}")
     if not execute:
         print("No trajectory action or SetIO service was called."); return 0
@@ -40,6 +43,15 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
     from rclpy.signals import SignalHandlerOptions
     d=config.data; rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node=Node("octo_replay_trajectory"); latest={"q":None,"velocity":None,"source_ros_ns":None}
+    from .ros_adapters.freedrive_controller import FreedriveController
+    controller_manager=FreedriveController(node,d["freedrive"])
+    try:
+        controller_manager.ensure_motion_controller()
+        print(f"trajectory controller active: {d['freedrive']['motion_controller_name']}",flush=True)
+    except Exception:
+        node.destroy_node()
+        if rclpy.ok():rclpy.shutdown()
+        raise
     runtime={"grip":None,"gripper_adapter":None,"feedback":None,"state":"preflight","gripper_source_ros_ns":None}
     tracking_errors=[];tcp_ages_ms=[]
     def cb(msg):
@@ -142,17 +154,23 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
         if cr[name]["enabled"]:
             video_recorders.append(CameraVideoRecorder(node,name,cr[name],replay_root,cr["capture_fps"],cr["encoder_queue_size"],container))
     for recorder in video_recorders:recorder.start()
-    bag.start();tracking_errors.clear();tcp_ages_ms.clear(); update_status(root,"replaying"); recording_start=time.monotonic(); trajectory_start=None;trajectory_execution_duration=None; failure=None; goal_accepted=False; result_code=None; handle=None
+    bag.start();tracking_errors.clear();tcp_ages_ms.clear(); update_status(root,"replaying"); recording_start=time.monotonic(); trajectory_start=None;trajectory_execution_duration=None; failure=None; goal_accepted=False; result_code=None; handle=None;return_to_start_completed=False
     replay_events=[]
     events_file=open(replay_root/"events.jsonl","a",encoding="utf-8")
     def spin_for(seconds):
         deadline=time.monotonic()+seconds
         while rclpy.ok() and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=min(.02,deadline-time.monotonic()))
     try:
-        first=grip.command_semantic(int(g[0]),execute=True)
+        first=grip.command_semantic(open_state,execute=True)
         if not first.success: raise RuntimeError("initial gripper command failed")
         runtime["gripper_source_ros_ns"]=node.get_clock().now().nanoseconds
-        spin_for(d["replay"]["start_settle_sec"])
+        print(
+            f"gripper initialized OPEN (semantic={open_state}, "
+            f"DO{d['gripper']['output_pin']}={first.output_value:g}, readback confirmed)",
+            flush=True,
+        )
+        print(f"waiting {d['gripper']['actuation_settle_sec']:.1f}s for gripper actuation...",flush=True)
+        spin_for(d["gripper"]["actuation_settle_sec"])
         from .ros_adapters.trajectory_client import TrajectoryClient
         feedback={"progress":None,"receipt":None,"max_error":None,"desired_positions":None}
         runtime["feedback"]=feedback
@@ -228,6 +246,39 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
         runtime["state"]="settling"
         print(f"trajectory result received: error_code={result_code}",flush=True)
         spin_for(d["replay"]["end_settle_sec"])
+        final_open=grip.command_semantic(open_state,execute=True)
+        if not final_open.success:raise RuntimeError("failed to open gripper after replay")
+        print(
+            f"final gripper OPEN (semantic={open_state}, "
+            f"DO{d['gripper']['output_pin']}={final_open.output_value:g})",
+            flush=True,
+        )
+        spin_for(d["gripper"]["actuation_settle_sec"])
+        if return_to_start:
+            runtime["state"]="returning_to_start"
+            print(
+                "WARNING: returning to recorded start in joint space; no collision checking is performed.\n"
+                f"duration={return_to_start_duration_sec:.1f}s",
+                flush=True,
+            )
+            return_goal=client.make_goal([return_to_start_duration_sec],[q[0]])
+            return_future=client.client.send_goal_async(return_goal)
+            rclpy.spin_until_future_complete(node,return_future,timeout_sec=5)
+            return_handle=return_future.result()
+            if return_handle is None or not return_handle.accepted:
+                raise RuntimeError("return-to-start goal rejected")
+            handle=return_handle
+            return_result=return_handle.get_result_async()
+            return_deadline=time.monotonic()+return_to_start_duration_sec*10+10
+            while not return_result.done():
+                rclpy.spin_once(node,timeout_sec=.02)
+                if time.monotonic()>return_deadline:
+                    return_handle.cancel_goal_async()
+                    raise RuntimeError("return-to-start result timeout")
+            if return_result.result().result.error_code!=0:
+                raise RuntimeError(f"return-to-start failed with error_code={return_result.result().result.error_code}")
+            return_to_start_completed=True
+            print("return-to-start complete",flush=True)
     except (KeyboardInterrupt,Exception) as e:
         failure=str(e)
         if isinstance(e,KeyboardInterrupt): failure="Ctrl+C"
@@ -285,7 +336,7 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
     quality.update(tracking)
     total_command_wall_time=time.monotonic()-command_wall_start
     durations=duration_metrics(times[-1],trajectory_execution_duration,recording_duration,total_command_wall_time)
-    summary={"schema_version":4,"execute":True,"goal_accepted":goal_accepted,"result_code":result_code,"dataset_compatible":failure is None and result_code==0,**durations,**tracking,"gripper_event_count":len(replay_events),"gripper_event_timing_errors":[x["timing_error_sec"] for x in replay_events],"gripper_events":replay_events,"camera_topic_message_counts":{k:v.get("frame_count") for k,v in camera_stats.items()},"state_topic_message_counts":{"/octo_collector/robot_state":len(tcp_ages_ms)},"bag_storage_id":d["storage"]["rosbag_storage_id"],"bag_exit_code":bag_code,"failure_reason":failure,"timing_mode":"controller_feedback_with_explicit_wall_fallback"}
+    summary={"schema_version":4,"execute":True,"goal_accepted":goal_accepted,"result_code":result_code,"dataset_compatible":failure is None and result_code==0,"return_to_start_requested":return_to_start,"return_to_start_completed":return_to_start_completed,**durations,**tracking,"gripper_event_count":len(replay_events),"gripper_event_timing_errors":[x["timing_error_sec"] for x in replay_events],"gripper_events":replay_events,"camera_topic_message_counts":{k:v.get("frame_count") for k,v in camera_stats.items()},"state_topic_message_counts":{"/octo_collector/robot_state":len(tcp_ages_ms)},"bag_storage_id":d["storage"]["rosbag_storage_id"],"bag_exit_code":bag_code,"failure_reason":failure,"timing_mode":"controller_feedback_with_explicit_wall_fallback"}
     from .core.quality_metrics import evaluate_quality
     evaluation=evaluate_quality(quality,summary,d["synchronization"]["max_tcp_age_ms"])
     quality["evaluation"]=evaluation

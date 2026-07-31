@@ -22,8 +22,10 @@ def _keyboard(queue,stop):
                 queue.submit(ch)
     finally: termios.tcsetattr(fd,termios.TCSADRAIN,old)
 
-def run_recording(config,instruction,execute=False,initial_gripper=None,enable_freedrive=False):
-    checks=run_preflight(config,execute,False,enable_freedrive)
+def run_recording(config,instruction,execute=False,initial_gripper=None,enable_freedrive=False,return_to_start=False,return_to_start_duration_sec=8.0):
+    if initial_gripper=="closed":
+        raise ValueError("recording must start with the gripper open")
+    checks=run_preflight(config,execute,False,enable_freedrive,return_to_start)
     for c in checks: print(f"{'OK' if c.ok else 'FAIL'} {c.name}: {c.detail}")
     if not preflight_ok(checks): return 2
     try:
@@ -38,7 +40,11 @@ def run_recording(config,instruction,execute=False,initial_gripper=None,enable_f
         d["storage"]["rosbag_storage_id"],d["storage"]["rosbag_storage_preset_profile"],
     )
     rclpy.init(); node=Node("octo_record_demonstration")
-    joint={"msg":None,"receipt":0}; samples=[]; q=KeyboardCommandQueue(d["keyboard"]); stop=threading.Event(); aborted=False; failure=None
+    def spin_for(seconds):
+        deadline=time.monotonic()+seconds
+        while rclpy.ok() and time.monotonic()<deadline:
+            rclpy.spin_once(node,timeout_sec=min(.05,deadline-time.monotonic()))
+    joint={"msg":None,"receipt":0}; samples=[]; q=KeyboardCommandQueue(d["keyboard"]); stop=threading.Event(); aborted=False; failure=None;return_to_start_completed=False
     def joint_cb(msg): joint.update(msg=msg,receipt=node.get_clock().now().nanoseconds)
     sub=node.create_subscription(JointState,d["ros"]["joint_state_topic"],joint_cb,50)
     tfbuf=Buffer(); listener=TransformListener(tfbuf,node)
@@ -67,15 +73,24 @@ def run_recording(config,instruction,execute=False,initial_gripper=None,enable_f
             update_status(root,"failed","could not enable freedrive")
             raise
     grip=GripperController(d["gripper"],(lambda value:adapter.send(value,d["gripper"]["command_timeout_sec"])) if adapter else None)
-    semantic=None
-    if initial_gripper is not None: semantic=0 if initial_gripper=="open" else 1
-    elif adapter is not None:
-        deadline=time.monotonic()+d["gripper"]["confirmation_timeout_sec"]
-        while adapter.latest_readback() is None and time.monotonic()<deadline:
-            rclpy.spin_once(node,timeout_sec=.05)
-        if adapter.latest_readback() is not None:
-            try: semantic=grip.semantic_from_output(adapter.latest_readback().value)
-            except ValueError: pass
+    semantic=int(d["gripper"]["semantic_open"])
+    initial_open=grip.command_semantic(semantic,execute=execute)
+    if not initial_open.success:
+        if freedrive is not None:
+            try:freedrive.disable_and_restore()
+            except Exception as restore_error:print(f"ERROR: failed to restore controller: {restore_error}",flush=True)
+        node.destroy_node()
+        if rclpy.ok():rclpy.shutdown()
+        update_status(root,"failed",f"could not initialize gripper open: {initial_open.reason}")
+        raise RuntimeError(f"could not initialize gripper open: {initial_open.reason}")
+    print(
+        f"gripper initialized OPEN (semantic={semantic}, "
+        f"DO{d['gripper']['output_pin']}={initial_open.output_value:g}, "
+        f"{'readback confirmed' if execute else 'dry-run'})",
+        flush=True,
+    )
+    print(f"waiting {d['gripper']['actuation_settle_sec']:.1f}s for gripper actuation...",flush=True)
+    spin_for(d["gripper"]["actuation_settle_sec"])
     try:
         bag_pid=bag.start()
     except Exception:
@@ -154,13 +169,53 @@ def run_recording(config,instruction,execute=False,initial_gripper=None,enable_f
                 last_progress=now
     except KeyboardInterrupt: aborted=True
     finally:
-        stop.set(); events.close(); bag_code=bag.stop()
+        stop.set()
+        final_open=grip.command_semantic(int(d["gripper"]["semantic_open"]),execute=execute)
+        if final_open.success:
+            print(
+                f"final gripper OPEN (semantic={d['gripper']['semantic_open']}, "
+                f"DO{d['gripper']['output_pin']}={final_open.output_value:g})",
+                flush=True,
+            )
+            spin_for(d["gripper"]["actuation_settle_sec"])
+        elif execute:
+            failure=failure or f"failed to open gripper after recording: {final_open.reason}"
+        events.close(); bag_code=bag.stop()
         if freedrive is not None:
             try:
                 freedrive.disable_and_restore()
                 print(f"freedrive disabled; restored {d['freedrive']['motion_controller_name']}",flush=True)
             except Exception as e:
                 failure=failure or f"failed to restore motion controller: {e}"
+                print(f"ERROR: {failure}",flush=True)
+        if return_to_start and not aborted and failure is None and samples:
+            try:
+                from .ros_adapters.freedrive_controller import FreedriveController
+                from .ros_adapters.trajectory_client import TrajectoryClient
+                controller_manager=freedrive or FreedriveController(node,d["freedrive"])
+                controller_manager.ensure_motion_controller()
+                print(
+                    "WARNING: returning to the first recorded joint position; no collision checking is performed.\n"
+                    f"duration={return_to_start_duration_sec:.1f}s",
+                    flush=True,
+                )
+                client=TrajectoryClient(node,d["ros"]["trajectory_action"],d["replay"]["controller_joint_order"],lambda _:None)
+                goal=client.make_goal([return_to_start_duration_sec],[np.asarray(samples[0][4],dtype=float)])
+                future=client.client.send_goal_async(goal)
+                rclpy.spin_until_future_complete(node,future,timeout_sec=5)
+                handle=future.result()
+                if handle is None or not handle.accepted:raise RuntimeError("recording return-to-start goal rejected")
+                result=handle.get_result_async();deadline=time.monotonic()+return_to_start_duration_sec*10+10
+                while not result.done():
+                    rclpy.spin_once(node,timeout_sec=.02)
+                    if time.monotonic()>deadline:
+                        handle.cancel_goal_async();raise RuntimeError("recording return-to-start result timeout")
+                code=result.result().result.error_code
+                if code!=0:raise RuntimeError(f"recording return-to-start failed with error_code={code}")
+                return_to_start_completed=True
+                print("recording return-to-start complete",flush=True)
+            except Exception as e:
+                failure=failure or str(e)
                 print(f"ERROR: {failure}",flush=True)
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
@@ -182,6 +237,8 @@ def run_recording(config,instruction,execute=False,initial_gripper=None,enable_f
         val.update(age_metrics(fields[12],"tcp_age"))
         val["tcp_valid_sample_count"]=int(tcp_valid.sum())
         val["tcp_stale_sample_count"]=int((~tcp_valid).sum())
+        val["return_to_start_requested"]=bool(return_to_start)
+        val["return_to_start_completed"]=bool(return_to_start_completed)
         val["raw_bag_present"]=bag.metadata_exists(); val["bag_exit_code"]=bag_code
         (root/"demonstration/validation.json").write_text(json.dumps(val,indent=2)+"\n")
     else: failure=failure or "no valid samples (joint, TF, and known initial gripper are required)"

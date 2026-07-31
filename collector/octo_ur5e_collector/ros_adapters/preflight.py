@@ -24,7 +24,7 @@ def _topic_once(topic,field):
     except subprocess.TimeoutExpired:
         return False,"no message within 3 seconds"
 
-def run_preflight(config,execute=False,replay=False,freedrive=False):
+def run_preflight(config,execute=False,replay=False,freedrive=False,motion=False):
     d=config.data; checks=[]
     checks.append(Check("ros2_cli",shutil.which("ros2") is not None,shutil.which("ros2") or "not found"))
     root=Path(d["storage"]["output_root"])
@@ -58,7 +58,7 @@ def run_preflight(config,execute=False,replay=False,freedrive=False):
         switch=d["freedrive"]["controller_manager_switch_service"]
         checks.append(Check(f"service:{switch}",switch in services,"present" if switch in services else "missing",True))
     rc,actions,err=_lines(["ros2","action","list"])
-    action=d["ros"]["trajectory_action"]; checks.append(Check(f"action:{action}",action in actions,"present" if action in actions else "missing",execute and replay))
+    action=d["ros"]["trajectory_action"]; checks.append(Check(f"action:{action}",action in actions,"present" if action in actions else "missing",execute and (replay or motion)))
     storage=d["storage"]["rosbag_storage_id"]
     p=subprocess.run(["ros2","bag","record","--help"],capture_output=True,text=True)
     checks.append(Check(f"rosbag_storage:{storage}",p.returncode==0,storage+" requested"))

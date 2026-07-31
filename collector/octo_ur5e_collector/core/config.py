@@ -26,7 +26,7 @@ KEYS = {
 "sampling":{"demonstration_rate_hz","target_dataset_rate_hz"},
 "freedrive":{"activation","auto_enable","auto_disable","controller_manager_switch_service","controller_name","motion_controller_name","enable_topic","keepalive_rate_hz","switch_timeout_sec"},
 "keyboard":{"open_keys","close_keys","finish_keys","abort_keys"},
-"gripper":{"semantic_open","semantic_closed","backend","output_pin","output_value_for_open","output_value_for_closed","command_on_change_only","minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec","readback_from_io_states","initial_state_source"},
+"gripper":{"semantic_open","semantic_closed","backend","output_pin","output_value_for_open","output_value_for_closed","command_on_change_only","minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec","actuation_settle_sec","readback_from_io_states","initial_state_source"},
 "replay":{"controller_joint_order","initial_joint_tolerance_rad","speed_scale","start_settle_sec","end_settle_sec","feedback_stale_sec","result_timeout_factor","result_timeout_margin_sec","max_joint_velocity_rad_s","max_joint_acceleration_rad_s2","execute_requires_program_running","execute_requires_normal_safety"},
 "storage":{"output_root","rosbag_storage_id","rosbag_storage_preset_profile","video_container","raw_state_storage","compression_format","minimum_free_space_gib","overwrite"},
 "synchronization":{"max_camera_time_error_ms","max_primary_wrist_difference_ms","max_pose_interpolation_gap_ms","max_joint_interpolation_gap_ms","max_gripper_age_ms","max_tcp_age_ms"},
@@ -75,7 +75,7 @@ def load_config(path: str|Path) -> CollectorConfig:
     if not isinstance(d["gripper"]["output_pin"],int) or not 0 <= d["gripper"]["output_pin"] <= 17: raise ConfigError("invalid output_pin")
     for k in ("demonstration_rate_hz","target_dataset_rate_hz"):
         if d["sampling"][k] <= 0: raise ConfigError(f"{k} must be positive")
-    for section, fields in (("gripper",("minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec")),("replay",("initial_joint_tolerance_rad","start_settle_sec","end_settle_sec","feedback_stale_sec","result_timeout_margin_sec"))):
+    for section, fields in (("gripper",("minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec","actuation_settle_sec")),("replay",("initial_joint_tolerance_rad","start_settle_sec","end_settle_sec","feedback_stale_sec","result_timeout_margin_sec"))):
         if any(d[section][k] < 0 for k in fields): raise ConfigError(f"{section} timeout/tolerance must be nonnegative")
     if d["replay"]["result_timeout_factor"] < 1: raise ConfigError("result_timeout_factor must be at least 1")
     if any(d["synchronization"][key] <= 0 for key in d["synchronization"]):
