@@ -1,17 +1,40 @@
-sampling:
-  good_interval_cv_max: 0.10
-  warning_interval_cv_max: 0.20
-  good_frame_drop_ratio_max: 0.01
-  warning_frame_drop_ratio_max: 0.05
-
-trajectory:
-  good_unexpected_stationary_ratio_max: 0.20
-  warning_unexpected_stationary_ratio_max: 0.35
+minimum:
+  transition_count: 20
+  valid_ratio_warning: 0.98
+  valid_ratio_reject: 0.90
 
 synchronization:
-  good_pose_sync_p95_ms_max: 20.0
-  warning_pose_sync_p95_ms_max: 40.0
-  good_joint_sync_p95_ms_max: 20.0
-  warning_joint_sync_p95_ms_max: 40.0
-  good_gripper_age_p95_ms_max: 50.0
-  warning_gripper_age_p95_ms_max: 100.0
+  # A 20 FPS primary camera has a 50 ms frame period, so nearest-frame error
+  # up to roughly 25 ms is normal. These limits judge each camera separately.
+  camera_time_error_warning_ms: 30.0
+  camera_time_error_reject_ms: 50.0
+
+  # Camera-pair offset is diagnostic. It is not a hard failure unless wrist is
+  # explicitly required for the training dataset.
+  camera_pair_warning_ms: 40.0
+  camera_pair_reject_ms: 80.0
+
+  # TCP TF updates at about 20 Hz in the supplied episodes. A ~50 ms
+  # interpolation bracket is expected; nearest-source error is more important.
+  pose_sync_warning_ms: 30.0
+  pose_sync_reject_ms: 60.0
+  pose_span_warning_ms: 70.0
+  pose_span_reject_ms: 120.0
+
+  joint_sync_warning_ms: 10.0
+  joint_sync_reject_ms: 30.0
+  joint_span_warning_ms: 20.0
+  joint_span_reject_ms: 50.0
+
+  gripper_age_warning_ms: 50.0
+  gripper_age_reject_ms: 120.0
+  tcp_age_warning_ms: 75.0
+  tcp_age_reject_ms: 120.0
+
+actions:
+  # Conservative 10 Hz diagnostic limits. WARN means inspect; REJECT strongly
+  # suggests a timestamp, coordinate-frame, or pose discontinuity problem.
+  translation_norm_warning_m: 0.04
+  translation_norm_reject_m: 0.10
+  rotation_norm_warning_rad: 0.25
+  rotation_norm_reject_rad: 0.60
