@@ -25,3 +25,13 @@ def test_robot_match_interpolation_and_gripper_zoh():
     r=robot_match(states,50_000_000,{"max_pose_interpolation_gap_ms":110,"max_joint_interpolation_gap_ms":110,"max_gripper_age_ms":60})
     assert np.allclose(r["tcp_position"],[.5,0,0]) and np.allclose(r["joint_position"],[.5]*6)
     assert r["gripper_state"]==0 and r["robot_valid"]
+
+def test_robot_match_uses_source_timestamps_and_rejects_stale_tcp():
+    states=[
+        {"ros_stamp_ns":10,"joint_source_ros_ns":0,"tcp_source_ros_ns":0,"tcp_valid":True,"gripper_source_ros_ns":0,"actual_joint_positions":[0]*6,"actual_tcp":{"position":[0,0,0],"quaternion_xyzw":[0,0,0,1]},"gripper_state":0},
+        {"ros_stamp_ns":110_000_010,"joint_source_ros_ns":100_000_000,"tcp_source_ros_ns":100_000_000,"tcp_valid":True,"gripper_source_ros_ns":0,"actual_joint_positions":[1]*6,"actual_tcp":{"position":[1,0,0],"quaternion_xyzw":[0,0,0,1]},"gripper_state":0},
+        {"ros_stamp_ns":120_000_010,"joint_source_ros_ns":110_000_000,"tcp_source_ros_ns":100_000_000,"tcp_valid":False,"gripper_source_ros_ns":0,"actual_joint_positions":[1]*6,"actual_tcp":None,"gripper_state":0},
+    ]
+    r=robot_match(states,50_000_000,{"max_pose_interpolation_gap_ms":110,"max_joint_interpolation_gap_ms":110,"max_gripper_age_ms":60,"max_tcp_age_ms":100})
+    assert np.allclose(r["tcp_position"],[.5,0,0])
+    assert r["pose_interpolation_gap_ms"]==100.0

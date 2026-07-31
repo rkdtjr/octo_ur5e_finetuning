@@ -22,8 +22,8 @@ def _keyboard(queue,stop):
                 queue.submit(ch)
     finally: termios.tcsetattr(fd,termios.TCSADRAIN,old)
 
-def run_recording(config,instruction,execute=False,initial_gripper=None):
-    checks=run_preflight(config,execute,False)
+def run_recording(config,instruction,execute=False,initial_gripper=None,enable_freedrive=False):
+    checks=run_preflight(config,execute,False,enable_freedrive)
     for c in checks: print(f"{'OK' if c.ok else 'FAIL'} {c.name}: {c.detail}")
     if not preflight_ok(checks): return 2
     try:
@@ -46,6 +46,26 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
     if execute:
         from .ros_adapters.digital_output_gripper import DigitalOutputGripperAdapter
         adapter=DigitalOutputGripperAdapter(node,{**d["gripper"],**d["ros"]})
+    freedrive=None
+    if enable_freedrive:
+        from .ros_adapters.freedrive_controller import FreedriveController
+        freedrive=FreedriveController(node,d["freedrive"])
+        try:
+            freedrive.enable()
+            print(
+                f"freedrive enabled: {d['freedrive']['controller_name']} "
+                f"(restores {d['freedrive']['motion_controller_name']} on exit)",
+                flush=True,
+            )
+        except Exception:
+            if freedrive.enabled:
+                try: freedrive.disable_and_restore()
+                except Exception as restore_error:
+                    print(f"ERROR: failed to restore controller after freedrive setup error: {restore_error}",flush=True)
+            node.destroy_node()
+            rclpy.shutdown()
+            update_status(root,"failed","could not enable freedrive")
+            raise
     grip=GripperController(d["gripper"],(lambda value:adapter.send(value,d["gripper"]["command_timeout_sec"])) if adapter else None)
     semantic=None
     if initial_gripper is not None: semantic=0 if initial_gripper=="open" else 1
@@ -56,12 +76,24 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
         if adapter.latest_readback() is not None:
             try: semantic=grip.semantic_from_output(adapter.latest_readback().value)
             except ValueError: pass
-    bag_pid=bag.start(); start=time.monotonic(); last_progress=start
+    try:
+        bag_pid=bag.start()
+    except Exception:
+        if freedrive is not None:
+            try: freedrive.disable_and_restore()
+            except Exception as restore_error:
+                print(f"ERROR: failed to restore controller after rosbag start error: {restore_error}",flush=True)
+        node.destroy_node()
+        if rclpy.ok(): rclpy.shutdown()
+        update_status(root,"failed","could not start rosbag")
+        raise
+    start=time.monotonic(); last_progress=start
     thread=threading.Thread(target=_keyboard,args=(q,stop),daemon=True); thread.start()
     mode=f"LIVE DO{d['gripper']['output_pin']}" if execute else "DRY-RUN"
+    freedrive_mode="managed freedrive" if enable_freedrive else "external freedrive"
     print(
         f"episode: {root}\n"
-        f"mode: {mode} | rosbag pid: {bag_pid}\n"
+        f"mode: {mode} | {freedrive_mode} | rosbag pid: {bag_pid}\n"
         "keys: 0/o open, 1/c close, q finish, Esc abort",
         flush=True,
     )
@@ -108,8 +140,11 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
                 T=quaternion_pose_to_matrix([tr.x,tr.y,tr.z],[ro.x,ro.y,ro.z,ro.w])
                 stamp=msg.header.stamp.sec*1_000_000_000+msg.header.stamp.nanosec
                 tfstamp=tf.header.stamp.sec*1_000_000_000+tf.header.stamp.nanosec; receipt=node.get_clock().now().nanoseconds
+                tcp_age_ms=max(0,(receipt-tfstamp)/1e6)
+                tcp_valid=tcp_age_ms<=d["synchronization"]["max_tcp_age_ms"]
+                tcp_pose=matrix_to_ur_pose(T) if tcp_valid else np.full(6,np.nan)
                 out=adapter.latest_readback().value if adapter and adapter.latest_readback() else grip.output_from_semantic(semantic)
-                samples.append((now-start,time.monotonic_ns(),stamp,joint["receipt"],pos,vel,tfstamp,receipt,matrix_to_ur_pose(T),semantic,out,max(0,(receipt-stamp)/1e6),max(0,(receipt-tfstamp)/1e6)))
+                samples.append((now-start,time.monotonic_ns(),stamp,joint["receipt"],pos,vel,tfstamp,receipt,tcp_pose,semantic,out,max(0,(receipt-stamp)/1e6),tcp_age_ms,tcp_valid))
             if now-last_progress>=1.0:
                 print(
                     f"[{now-start:7.1f}s] recording | valid samples: {len(samples)}"
@@ -119,13 +154,34 @@ def run_recording(config,instruction,execute=False,initial_gripper=None):
                 last_progress=now
     except KeyboardInterrupt: aborted=True
     finally:
-        stop.set(); events.close(); bag_code=bag.stop(); node.destroy_node(); rclpy.shutdown()
+        stop.set(); events.close(); bag_code=bag.stop()
+        if freedrive is not None:
+            try:
+                freedrive.disable_and_restore()
+                print(f"freedrive disabled; restored {d['freedrive']['motion_controller_name']}",flush=True)
+            except Exception as e:
+                failure=failure or f"failed to restore motion controller: {e}"
+                print(f"ERROR: {failure}",flush=True)
+        node.destroy_node()
+        if rclpy.ok(): rclpy.shutdown()
     if samples:
         fields=list(zip(*samples))
-        np.savez_compressed(root/"demonstration/samples.npz",elapsed_sec=fields[0],monotonic_time_ns=fields[1],joint_source_time_ns=fields[2],joint_receipt_time_ns=fields[3],joint_position=np.stack(fields[4]),joint_velocity=np.stack(fields[5]),tcp_source_time_ns=fields[6],tcp_receipt_time_ns=fields[7],tcp_pose6=np.stack(fields[8]),gripper_semantic_state=fields[9],digital_output_value=fields[10],state_age_ms=fields[11],tf_age_ms=fields[12])
-        t=np.asarray(fields[0]); t=t-t[0]
-        np.savez_compressed(root/"demonstration/trajectory.npz",time_from_start_sec=t,joint_position=np.stack(fields[4]),joint_velocity=np.stack(fields[5]),tcp_pose6=np.stack(fields[8]),gripper_semantic_state=fields[9],digital_output_value=fields[10])
-        val=validate_arrays(t,np.stack(fields[4]),fields[9],np.stack(fields[8]),d["replay"]["max_joint_velocity_rad_s"],d["replay"]["max_joint_acceleration_rad_s2"])
+        tcp_valid=np.asarray(fields[13],dtype=bool)
+        np.savez_compressed(root/"demonstration/samples.npz",elapsed_sec=fields[0],monotonic_time_ns=fields[1],joint_source_time_ns=fields[2],joint_receipt_time_ns=fields[3],joint_position=np.stack(fields[4]),joint_velocity=np.stack(fields[5]),tcp_source_time_ns=fields[6],tcp_receipt_time_ns=fields[7],tcp_pose6=np.stack(fields[8]),gripper_semantic_state=fields[9],digital_output_value=fields[10],state_age_ms=fields[11],tcp_age_ms=fields[12],tcp_valid=tcp_valid)
+        from .core.quality_metrics import age_metrics
+        if not tcp_valid.any():
+            failure="no TCP samples passed the configured stale threshold"
+            val={"valid":False,"errors":[failure],"sample_count":0,"duration_sec":0.0,"gripper_transitions":[]}
+        else:
+            valid_indices=np.flatnonzero(tcp_valid)
+            t=np.asarray(fields[0])[valid_indices]; t=t-t[0]
+            joint_position=np.stack(fields[4])[valid_indices];joint_velocity=np.stack(fields[5])[valid_indices]
+            tcp_pose=np.stack(fields[8])[valid_indices];gripper_state=np.asarray(fields[9])[valid_indices];digital_output=np.asarray(fields[10])[valid_indices]
+            np.savez_compressed(root/"demonstration/trajectory.npz",time_from_start_sec=t,joint_position=joint_position,joint_velocity=joint_velocity,tcp_pose6=tcp_pose,gripper_semantic_state=gripper_state,digital_output_value=digital_output)
+            val=validate_arrays(t,joint_position,gripper_state,tcp_pose,d["replay"]["max_joint_velocity_rad_s"],d["replay"]["max_joint_acceleration_rad_s2"])
+        val.update(age_metrics(fields[12],"tcp_age"))
+        val["tcp_valid_sample_count"]=int(tcp_valid.sum())
+        val["tcp_stale_sample_count"]=int((~tcp_valid).sum())
         val["raw_bag_present"]=bag.metadata_exists(); val["bag_exit_code"]=bag_code
         (root/"demonstration/validation.json").write_text(json.dumps(val,indent=2)+"\n")
     else: failure=failure or "no valid samples (joint, TF, and known initial gripper are required)"

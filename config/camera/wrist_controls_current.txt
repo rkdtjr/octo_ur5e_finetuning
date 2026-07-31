@@ -1,0 +1,11 @@
+
+User Controls
+
+                    red_balance 0x0098090e (int)    : min=0 max=250 step=1 default=138 value=138 flags=0x00001000
+                   blue_balance 0x0098090f (int)    : min=0 max=250 step=1 default=152 value=152 flags=0x00001000
+                           gain 0x00980913 (int)    : min=0 max=255 step=1 default=64 value=64 flags=0x00001000
+
+Camera Controls
+
+                  auto_exposure 0x009a0901 (menu)   : min=0 max=3 default=1 value=1 (Manual Mode)
+         exposure_time_absolute 0x009a0902 (int)    : min=1 max=1000 step=1 default=55 value=55 flags=0x00001000

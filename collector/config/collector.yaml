@@ -55,7 +55,16 @@ camera_recording:
     profile: high
     pixel_format: yuv420p
   preview: {enabled: true, fps: 10.0, record: false}
-freedrive: {activation: external, auto_enable: false, auto_disable: false}
+freedrive:
+  activation: controller
+  auto_enable: false
+  auto_disable: true
+  controller_manager_switch_service: /controller_manager/switch_controller
+  controller_name: freedrive_mode_controller
+  motion_controller_name: scaled_joint_trajectory_controller
+  enable_topic: /freedrive_mode_controller/enable_freedrive_mode
+  keepalive_rate_hz: 2.0
+  switch_timeout_sec: 5.0
 keyboard:
   open_keys: ["0", "o"]
   close_keys: ["1", "c"]
@@ -102,6 +111,7 @@ synchronization:
   max_pose_interpolation_gap_ms: 30.0
   max_joint_interpolation_gap_ms: 30.0
   max_gripper_age_ms: 100.0
+  max_tcp_age_ms: 100.0
 dataset_preprocessing:
   primary: {output_resolution: [256, 256], resize_method: area, crop: center}
   wrist: {output_resolution: [256, 256], resize_method: area, crop: center}

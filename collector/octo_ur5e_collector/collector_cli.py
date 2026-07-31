@@ -11,16 +11,16 @@ def parser():
     p=argparse.ArgumentParser(prog="octo-collector",description="Safe UR5e demonstration collector (hardware actions require --execute)")
     p.add_argument("--version",action="version",version="%(prog)s 0.2.0")
     sub=p.add_subparsers(dest="command",required=True)
-    d=sub.add_parser("doctor",help="read-only ROS/config preflight"); d.add_argument("--config",default=DEFAULT_CONFIG); d.add_argument("--replay",action="store_true")
-    r=sub.add_parser("record-demo",help="record a freedrive demonstration"); r.add_argument("--config",default=DEFAULT_CONFIG); r.add_argument("--instruction",required=True); r.add_argument("--execute",action="store_true"); r.add_argument("--initial-gripper",choices=["open","closed"])
+    d=sub.add_parser("doctor",help="read-only ROS/config preflight"); d.add_argument("--config",default=DEFAULT_CONFIG); d.add_argument("--replay",action="store_true"); d.add_argument("--freedrive",action="store_true")
+    r=sub.add_parser("record-demo",help="record a freedrive demonstration"); r.add_argument("--config",default=DEFAULT_CONFIG); r.add_argument("--instruction",required=True); r.add_argument("--execute",action="store_true"); r.add_argument("--initial-gripper",choices=["open","closed"]); r.add_argument("--enable-freedrive",action="store_true",help="switch the motion controller to freedrive for recording and restore it on exit")
     v=sub.add_parser("validate-demo",help="validate structured trajectory"); v.add_argument("episode"); v.add_argument("--config",default=DEFAULT_CONFIG); v.add_argument("--allow-missing-bag",action="store_true")
     x=sub.add_parser("replay",help="validate/dry-run or explicitly execute replay"); x.add_argument("episode"); x.add_argument("--config",default=DEFAULT_CONFIG); x.add_argument("--execute",action="store_true"); x.add_argument("--wall-clock-gripper-fallback",action="store_true"); x.add_argument("--move-to-start",action="store_true",help="explicitly command a joint-space move to the recorded start before replay"); x.add_argument("--move-to-start-duration-sec",type=float,default=8.0)
     i=sub.add_parser("inspect",help="show episode metadata"); i.add_argument("episode")
     return p
 
-def _doctor(cfg,execute=False,replay=False):
+def _doctor(cfg,execute=False,replay=False,freedrive=False):
     from .ros_adapters.preflight import run_preflight,preflight_ok
-    checks=run_preflight(cfg,execute,replay)
+    checks=run_preflight(cfg,execute,replay,freedrive)
     for c in checks: print(f"{'OK' if c.ok else 'FAIL'} {'required' if c.required else 'optional'} {c.name}: {c.detail}")
     return 0 if preflight_ok(checks) else 2
 
@@ -41,12 +41,12 @@ def main(argv=None) -> None:
         if a.command=="inspect": code=_inspect(a.episode)
         else:
             cfg=load_config(a.config)
-            if a.command=="doctor": code=_doctor(cfg,replay=a.replay)
+            if a.command=="doctor": code=_doctor(cfg,replay=a.replay,freedrive=a.freedrive)
             elif a.command=="validate-demo":
                 result=validate_trajectory_file(a.episode,cfg,not a.allow_missing_bag); print(json.dumps(result,indent=2)); code=0 if result["valid"] else 2
             elif a.command=="record-demo":
                 from .record_demonstration_node import run_recording
-                code=run_recording(cfg,a.instruction,a.execute,a.initial_gripper)
+                code=run_recording(cfg,a.instruction,a.execute,a.initial_gripper,a.enable_freedrive)
             elif a.command=="replay":
                 from .replay_trajectory_node import run_replay
                 if a.move_to_start and not a.execute:raise ValueError("--move-to-start requires --execute")

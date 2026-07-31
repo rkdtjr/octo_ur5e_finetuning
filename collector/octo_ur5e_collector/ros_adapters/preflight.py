@@ -24,7 +24,7 @@ def _topic_once(topic,field):
     except subprocess.TimeoutExpired:
         return False,"no message within 3 seconds"
 
-def run_preflight(config,execute=False,replay=False):
+def run_preflight(config,execute=False,replay=False,freedrive=False):
     d=config.data; checks=[]
     checks.append(Check("ros2_cli",shutil.which("ros2") is not None,shutil.which("ros2") or "not found"))
     root=Path(d["storage"]["output_root"])
@@ -45,15 +45,18 @@ def run_preflight(config,execute=False,replay=False):
     if program_topic in topics:
         ok,value=_topic_once(program_topic,"data")
         running=ok and value.lower()=="true"
-        checks.append(Check("robot_program_running",running,value,execute and d["replay"]["execute_requires_program_running"]))
-    else: checks.append(Check("robot_program_running",False,"topic missing",execute and d["replay"]["execute_requires_program_running"]))
+        checks.append(Check("robot_program_running",running,value,(execute or freedrive) and d["replay"]["execute_requires_program_running"]))
+    else: checks.append(Check("robot_program_running",False,"topic missing",(execute or freedrive) and d["replay"]["execute_requires_program_running"]))
     if safety_topic in topics:
         ok,value=_topic_once(safety_topic,"mode")
         normal=ok and value.strip()=="1"
-        checks.append(Check("safety_mode_normal",normal,value,execute and d["replay"]["execute_requires_normal_safety"]))
-    else: checks.append(Check("safety_mode_normal",False,"topic missing",execute and d["replay"]["execute_requires_normal_safety"]))
+        checks.append(Check("safety_mode_normal",normal,value,(execute or freedrive) and d["replay"]["execute_requires_normal_safety"]))
+    else: checks.append(Check("safety_mode_normal",False,"topic missing",(execute or freedrive) and d["replay"]["execute_requires_normal_safety"]))
     rc,services,err=_lines(["ros2","service","list"])
     svc=d["ros"]["set_io_service"]; checks.append(Check(f"service:{svc}",svc in services,"present" if svc in services else "missing",execute))
+    if freedrive:
+        switch=d["freedrive"]["controller_manager_switch_service"]
+        checks.append(Check(f"service:{switch}",switch in services,"present" if switch in services else "missing",True))
     rc,actions,err=_lines(["ros2","action","list"])
     action=d["ros"]["trajectory_action"]; checks.append(Check(f"action:{action}",action in actions,"present" if action in actions else "missing",execute and replay))
     storage=d["storage"]["rosbag_storage_id"]
