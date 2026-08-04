@@ -19,11 +19,12 @@ class CollectorConfig:
     @property
     def storage(self): return self.data["storage"]
 
-TOP = {"schema_version","robot","ros","cameras","sampling","camera_recording","freedrive","keyboard","gripper","replay","storage","synchronization","dataset_preprocessing","raw_topics","action_contract"}
+TOP = {"schema_version","robot","ros","cameras","sampling","recording_start","camera_recording","freedrive","keyboard","gripper","replay","storage","synchronization","dataset_preprocessing","raw_topics","action_contract"}
 KEYS = {
 "robot":{"name","base_frame","tcp_frame","joint_names"},
 "ros":{"joint_state_topic","tf_topic","tf_static_topic","controller_state_topic","trajectory_action","io_states_topic","set_io_service","robot_program_running_topic","safety_mode_topic"},
 "sampling":{"demonstration_rate_hz","target_dataset_rate_hz"},
+"recording_start":{"tcp_pose6","move_group","move_duration_sec","position_tolerance_m","rotation_tolerance_rad"},
 "freedrive":{"activation","auto_enable","auto_disable","controller_manager_switch_service","controller_name","motion_controller_name","enable_topic","keepalive_rate_hz","switch_timeout_sec"},
 "keyboard":{"open_keys","close_keys","finish_keys","abort_keys"},
 "gripper":{"semantic_open","semantic_closed","backend","output_pin","output_value_for_open","output_value_for_closed","command_on_change_only","minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec","actuation_settle_sec","readback_from_io_states","initial_state_source"},
@@ -75,6 +76,9 @@ def load_config(path: str|Path) -> CollectorConfig:
     if not isinstance(d["gripper"]["output_pin"],int) or not 0 <= d["gripper"]["output_pin"] <= 17: raise ConfigError("invalid output_pin")
     for k in ("demonstration_rate_hz","target_dataset_rate_hz"):
         if d["sampling"][k] <= 0: raise ConfigError(f"{k} must be positive")
+    start=d["recording_start"]
+    if len(start["tcp_pose6"])!=6 or not all(isinstance(x,(int,float)) for x in start["tcp_pose6"]):raise ConfigError("recording_start.tcp_pose6 must contain six numbers")
+    if not start["move_group"] or any(start[k]<=0 for k in ("move_duration_sec","position_tolerance_m","rotation_tolerance_rad")):raise ConfigError("invalid recording_start setting")
     for section, fields in (("gripper",("minimum_command_interval_sec","command_timeout_sec","confirmation_timeout_sec","actuation_settle_sec")),("replay",("initial_joint_tolerance_rad","start_settle_sec","end_settle_sec","feedback_stale_sec","result_timeout_margin_sec"))):
         if any(d[section][k] < 0 for k in fields): raise ConfigError(f"{section} timeout/tolerance must be nonnegative")
     if d["replay"]["result_timeout_factor"] < 1: raise ConfigError("result_timeout_factor must be at least 1")

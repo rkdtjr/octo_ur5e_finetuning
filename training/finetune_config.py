@@ -4,11 +4,19 @@ from ml_collections.config_dict import FieldReference
 
 
 def get_config(config_string="head_only,language_conditioned"):
-    mode, modality = config_string.split(",")
+    parts = config_string.split(",")
+    if len(parts) not in {2, 3}:
+        raise ValueError(
+            "config string must be MODE,MODALITY[,wrist]"
+        )
+    mode, modality = parts[:2]
+    camera_mode = parts[2] if len(parts) == 3 else "primary_only"
     if mode not in {"full", "head_only", "head_mlp_only"}:
         raise ValueError(f"unsupported finetuning mode: {mode}")
     if modality not in {"language_conditioned", "multimodal"}:
         raise ValueError(f"unsupported modality: {modality}")
+    if camera_mode not in {"primary_only", "wrist"}:
+        raise ValueError(f"unsupported camera mode: {camera_mode}")
     if mode == "full":
         frozen_keys = None
     elif mode == "head_only":
@@ -36,7 +44,10 @@ def get_config(config_string="head_only,language_conditioned"):
         "dataset_kwargs": {
             "name": "ur5e_pick",
             "data_dir": "./data/rlds/ur5e_pick_3val",
-            "image_obs_keys": {"primary": "image_primary", "wrist": None},
+            "image_obs_keys": {
+                "primary": "image_primary",
+                "wrist": "image_wrist" if camera_mode == "wrist" else None,
+            },
             "proprio_obs_key": None,
             "language_key": "language_instruction",
             "action_proprio_normalization_type": "normal",

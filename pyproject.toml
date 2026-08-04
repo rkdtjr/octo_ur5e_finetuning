@@ -22,10 +22,11 @@ octo-dataset = "rlds_builder.pipeline:main"
 octo-check-dataset = "training.check_dataset:main"
 octo-train = "training.doctor:main"
 octo-plot-metrics = "training.plot_metrics:main"
+octo-policy = "inference.octo_ur5e_inference:main"
 
 [tool.setuptools.packages.find]
 where = ["collector", "."]
-include = ["octo_ur5e_collector*", "processing*", "rlds_builder*", "training*"]
+include = ["octo_ur5e_collector*", "processing*", "rlds_builder*", "training*", "inference*"]
 exclude = ["processing.tests*", "processing_backup*"]
 
 [tool.setuptools.package-data]
