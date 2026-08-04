@@ -19,7 +19,7 @@ cameras:
   - {logical_name: wrist, image_topic: /wrist_camera/image_raw, camera_info_topic: null, required: true}
 sampling: {demonstration_rate_hz: 100.0, target_dataset_rate_hz: 10.0}
 recording_start:
-  tcp_pose6: [0.550, 0.133, 0.296, 2.222, 2.222, 0.000]
+  tcp_pose6: [0.549962069, 0.133075875, 0.483289914, -2.220900488, -2.220842478, 0.000548004]
   move_group: ur_manipulator
   move_duration_sec: 8.0
   position_tolerance_m: 0.015
@@ -104,7 +104,7 @@ replay:
   execute_requires_program_running: true
   execute_requires_normal_safety: true
 storage:
-  output_root: data/raw
+  output_root: data/pick_place/raw
   rosbag_storage_id: mcap
   rosbag_storage_preset_profile: zstd_fast
   video_container: mkv

@@ -3,10 +3,10 @@ import json,sys,time,shutil
 from pathlib import Path
 import numpy as np
 from .core.episode import update_status,utc_now
-from .core.trajectory import validate_trajectory_file
+from .core.trajectory import validate_arrays,validate_trajectory_file
 from .ros_adapters.preflight import run_preflight,preflight_ok
 
-def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_start=False,move_to_start_duration_sec=8.0,return_to_start=False,return_to_start_duration_sec=8.0):
+def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_start=False,move_to_start_duration_sec=8.0,return_to_start=False,return_to_start_duration_sec=8.0,smooth_trajectory=False,smoothing_window_sec=.35,smoothing_polyorder=3,gripper_anchor_window_sec=.5):
     command_wall_start=time.monotonic()
     validation=validate_trajectory_file(root,config,True)
     if not validation["valid"]:
@@ -16,6 +16,14 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
     open_state=int(config.gripper["semantic_open"])
     if int(g[0])!=open_state:
         events.insert(0,{"index":0,"time_sec":0.0,"semantic_state":int(g[0]),"reason":"restore_recorded_initial_state"})
+    smoothing={"enabled":False}
+    if smooth_trajectory:
+        from .core.trajectory_smoothing import smooth_joint_trajectory
+        anchor_times=[x["time_sec"]/config.replay["speed_scale"] for x in validation["gripper_transitions"]]
+        q,smoothing=smooth_joint_trajectory(times,q,anchor_times,smoothing_window_sec,smoothing_polyorder,gripper_anchor_window_sec)
+        smoothed_validation=validate_arrays(times,q,g,z["tcp_pose6"],config.replay["max_joint_velocity_rad_s"],config.replay["max_joint_acceleration_rad_s2"])
+        if not smoothed_validation["valid"]:raise RuntimeError(f"smoothed trajectory invalid: {smoothed_validation['errors']}")
+        print(f"SMOOTHING max_change={smoothing['max_position_change_rad']:.5f}rad velocity={smoothing['before']['max_velocity_rad_s']:.4f}->{smoothing['after']['max_velocity_rad_s']:.4f}rad/s acceleration={smoothing['before']['max_acceleration_rad_s2']:.2f}->{smoothing['after']['max_acceleration_rad_s2']:.2f}rad/s^2 anchors={smoothing['anchor_count']}",flush=True)
     print(f"{'EXECUTE' if execute else 'DRY-RUN'} points={len(times)} duration={times[-1]:.3f}s max_velocity={validation['max_velocity_rad_s']:.4f} gripper_events={events}")
     if not execute:
         print("No trajectory action or SetIO service was called."); return 0
@@ -302,6 +310,7 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
     metadata={"schema_version":4,"episode_id":root.name,"container":container,"capture_fps":cr["capture_fps"],"dataset_rate_hz":cr["dataset_rate_hz"],"robot_state_file":"robot_states.mcap","camera_timestamp_clock":"ROS header stamp with local monotonic receipt index","preview_recorded":False,"gripper":{"output_pin":d["gripper"]["output_pin"],"semantic_open":d["gripper"]["semantic_open"],"semantic_closed":d["gripper"]["semantic_closed"],"physical_output_for_open":d["gripper"]["output_value_for_open"],"physical_output_for_closed":d["gripper"]["output_value_for_closed"]},"training_data_contract":{"timeline":"common ROS nanoseconds","frame_selection":"nearest unique frame to 10 Hz target timestamp","camera_output":"RGB uint8","gripper_semantic":{"open":0,"closed":1},"tcp_orientation":"quaternion_xyzw","joint_order":d["robot"]["joint_names"]},"cameras":{}}
+    metadata["trajectory_smoothing"]=smoothing
     for recorder in video_recorders:
         metadata["cameras"][recorder.name]={"file":f"{recorder.name}.{container}","timestamps":f"{recorder.name}_timestamps.csv","resolution":recorder.c["resolution"],"configured_source_encoding":recorder.c["source_encoding"],"observed_source_encodings":camera_stats[recorder.name].get("observed_source_encodings"),"source_topic":recorder.c["source_topic"],"bayer_pattern":recorder.c["bayer_pattern"],"encoder_input_color_order":"BGR","stored_pixel_format":recorder.c["pixel_format"],"decoded_dataset_contract":"RGB uint8","dataset_preprocessing":d["dataset_preprocessing"][recorder.name],"codec":"h264","encoder":camera_stats[recorder.name].get("encoder"),"bitrate_mbps":recorder.c["bitrate_mbps"],"maxrate_mbps":recorder.c["maxrate_mbps"],"bufsize_mbps":recorder.c["bufsize_mbps"],"gop_size":recorder.c["gop_size"]}
     (replay_root/"metadata.json").write_text(json.dumps(metadata,indent=2)+"\n")
@@ -337,6 +346,7 @@ def run_replay(root:Path,config,execute=False,wall_clock_fallback=False,move_to_
     total_command_wall_time=time.monotonic()-command_wall_start
     durations=duration_metrics(times[-1],trajectory_execution_duration,recording_duration,total_command_wall_time)
     summary={"schema_version":4,"execute":True,"goal_accepted":goal_accepted,"result_code":result_code,"dataset_compatible":failure is None and result_code==0,"return_to_start_requested":return_to_start,"return_to_start_completed":return_to_start_completed,**durations,**tracking,"gripper_event_count":len(replay_events),"gripper_event_timing_errors":[x["timing_error_sec"] for x in replay_events],"gripper_events":replay_events,"camera_topic_message_counts":{k:v.get("frame_count") for k,v in camera_stats.items()},"state_topic_message_counts":{"/octo_collector/robot_state":len(tcp_ages_ms)},"bag_storage_id":d["storage"]["rosbag_storage_id"],"bag_exit_code":bag_code,"failure_reason":failure,"timing_mode":"controller_feedback_with_explicit_wall_fallback"}
+    summary["trajectory_smoothing"]=smoothing
     from .core.quality_metrics import evaluate_quality
     evaluation=evaluate_quality(quality,summary,d["synchronization"]["max_tcp_age_ms"])
     quality["evaluation"]=evaluation

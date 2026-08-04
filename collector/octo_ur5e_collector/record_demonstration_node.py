@@ -5,7 +5,7 @@ from .core.episode import create_episode,update_status,utc_now
 from .core.gripper import GripperController
 from .core.keyboard_commands import KeyboardCommandQueue
 from .core.trajectory import validate_arrays
-from .core.transforms import matrix_to_ur_pose,quaternion_pose_to_matrix
+from .core.transforms import matrix_to_quaternion_pose,matrix_to_ur_pose,quaternion_pose_to_matrix,relative_pose_action,ur_pose_to_matrix
 from .ros_adapters.preflight import run_preflight,preflight_ok
 from .ros_adapters.rosbag_recorder import RosbagRecorder
 
@@ -22,10 +22,10 @@ def _keyboard(queue,stop):
                 queue.submit(ch)
     finally: termios.tcsetattr(fd,termios.TCSADRAIN,old)
 
-def run_recording(config,instruction,execute=False,initial_gripper=None,enable_freedrive=False,return_to_start=False,return_to_start_duration_sec=8.0):
+def run_recording(config,instruction,execute=False,initial_gripper=None,enable_freedrive=False,return_to_start=False,return_to_start_duration_sec=8.0,move_to_fixed_start=False):
     if initial_gripper=="closed":
         raise ValueError("recording must start with the gripper open")
-    checks=run_preflight(config,execute,False,enable_freedrive,return_to_start)
+    checks=run_preflight(config,execute,False,enable_freedrive,return_to_start or move_to_fixed_start)
     for c in checks: print(f"{'OK' if c.ok else 'FAIL'} {c.name}: {c.detail}")
     if not preflight_ok(checks): return 2
     try:
@@ -53,25 +53,6 @@ def run_recording(config,instruction,execute=False,initial_gripper=None,enable_f
         from .ros_adapters.digital_output_gripper import DigitalOutputGripperAdapter
         adapter=DigitalOutputGripperAdapter(node,{**d["gripper"],**d["ros"]})
     freedrive=None
-    if enable_freedrive:
-        from .ros_adapters.freedrive_controller import FreedriveController
-        freedrive=FreedriveController(node,d["freedrive"])
-        try:
-            freedrive.enable()
-            print(
-                f"freedrive enabled: {d['freedrive']['controller_name']} "
-                f"(restores {d['freedrive']['motion_controller_name']} on exit)",
-                flush=True,
-            )
-        except Exception:
-            if freedrive.enabled:
-                try: freedrive.disable_and_restore()
-                except Exception as restore_error:
-                    print(f"ERROR: failed to restore controller after freedrive setup error: {restore_error}",flush=True)
-            node.destroy_node()
-            rclpy.shutdown()
-            update_status(root,"failed","could not enable freedrive")
-            raise
     grip=GripperController(d["gripper"],(lambda value:adapter.send(value,d["gripper"]["command_timeout_sec"])) if adapter else None)
     semantic=int(d["gripper"]["semantic_open"])
     initial_open=grip.command_semantic(semantic,execute=execute)
@@ -91,6 +72,57 @@ def run_recording(config,instruction,execute=False,initial_gripper=None,enable_f
     )
     print(f"waiting {d['gripper']['actuation_settle_sec']:.1f}s for gripper actuation...",flush=True)
     spin_for(d["gripper"]["actuation_settle_sec"])
+    if move_to_fixed_start:
+        try:
+            from geometry_msgs.msg import PoseStamped
+            from moveit_msgs.srv import GetPositionIK
+            from .ros_adapters.freedrive_controller import FreedriveController
+            from .ros_adapters.trajectory_client import TrajectoryClient
+            controller=FreedriveController(node,d["freedrive"]);controller.ensure_motion_controller()
+            deadline=time.monotonic()+5
+            while joint["msg"] is None and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=.05)
+            if joint["msg"] is None:raise RuntimeError("fixed-start move timed out waiting for joint state")
+            target=ur_pose_to_matrix(d["recording_start"]["tcp_pose6"]);position,quat=matrix_to_quaternion_pose(target)
+            ik=node.create_client(GetPositionIK,"/compute_ik")
+            if not ik.wait_for_service(timeout_sec=3):raise RuntimeError("MoveIt /compute_ik unavailable; start move_group before recording")
+            msg=joint["msg"];indices={name:i for i,name in enumerate(msg.name)}
+            if any(name not in indices for name in d["robot"]["joint_names"]):raise RuntimeError("joint state missing configured UR joints")
+            request=GetPositionIK.Request();request.ik_request.group_name=d["recording_start"]["move_group"];request.ik_request.avoid_collisions=True;request.ik_request.timeout.sec=2
+            request.ik_request.robot_state.joint_state.name=list(d["robot"]["joint_names"]);request.ik_request.robot_state.joint_state.position=[msg.position[indices[name]] for name in d["robot"]["joint_names"]]
+            request.ik_request.pose_stamped=PoseStamped();request.ik_request.pose_stamped.header.frame_id=d["robot"]["base_frame"];request.ik_request.pose_stamped.header.stamp=node.get_clock().now().to_msg();pose=request.ik_request.pose_stamped.pose
+            pose.position.x,pose.position.y,pose.position.z=map(float,position);pose.orientation.x,pose.orientation.y,pose.orientation.z,pose.orientation.w=map(float,quat)
+            future=ik.call_async(request);rclpy.spin_until_future_complete(node,future,timeout_sec=3)
+            if not future.done() or future.result() is None or future.result().error_code.val!=1:raise RuntimeError("collision-aware IK failed for configured recording start pose")
+            solution=future.result().solution.joint_state;solution_index={name:i for i,name in enumerate(solution.name)};goal=np.asarray([solution.position[solution_index[name]] for name in d["replay"]["controller_joint_order"]],float)
+            duration=float(d["recording_start"]["move_duration_sec"]);client=TrajectoryClient(node,d["ros"]["trajectory_action"],d["replay"]["controller_joint_order"],lambda _:None)
+            if not client.client.wait_for_server(timeout_sec=3):raise RuntimeError("trajectory action unavailable for fixed-start move")
+            print("WARNING: moving to configured recording start with collision-aware IK.",flush=True);print(f"target_tcp_pose6={d['recording_start']['tcp_pose6']} duration={duration:.1f}s",flush=True)
+            sent=client.client.send_goal_async(client.make_goal([duration],[goal]));rclpy.spin_until_future_complete(node,sent,timeout_sec=5);handle=sent.result()
+            if handle is None or not handle.accepted:raise RuntimeError("fixed-start trajectory goal rejected")
+            result=handle.get_result_async();deadline=time.monotonic()+duration*3+5
+            while not result.done():
+                rclpy.spin_once(node,timeout_sec=.02)
+                if time.monotonic()>deadline:handle.cancel_goal_async();raise RuntimeError("fixed-start trajectory result timeout")
+            if result.result().result.error_code!=0:raise RuntimeError(f"fixed-start trajectory failed with error_code={result.result().result.error_code}")
+            spin_for(.5);actual_tf=tfbuf.lookup_transform(d["robot"]["base_frame"],d["robot"]["tcp_frame"],rclpy.time.Time());tr=actual_tf.transform.translation;ro=actual_tf.transform.rotation
+            actual=quaternion_pose_to_matrix([tr.x,tr.y,tr.z],[ro.x,ro.y,ro.z,ro.w]);error=relative_pose_action(target,actual,"base");position_error=float(np.linalg.norm(error[:3]));rotation_error=float(np.linalg.norm(error[3:]))
+            if position_error>d["recording_start"]["position_tolerance_m"] or rotation_error>d["recording_start"]["rotation_tolerance_rad"]:raise RuntimeError(f"fixed-start tolerance failed: position={position_error:.4f}m rotation={rotation_error:.4f}rad")
+            print(f"fixed recording start reached: position_error={position_error:.4f}m rotation_error={rotation_error:.4f}rad",flush=True)
+        except Exception as error:
+            node.destroy_node()
+            if rclpy.ok():rclpy.shutdown()
+            update_status(root,"failed",str(error));raise
+    if enable_freedrive:
+        from .ros_adapters.freedrive_controller import FreedriveController
+        freedrive=FreedriveController(node,d["freedrive"])
+        try:
+            freedrive.enable()
+            print(f"freedrive enabled: {d['freedrive']['controller_name']} (restores {d['freedrive']['motion_controller_name']} on exit)",flush=True)
+        except Exception:
+            if freedrive.enabled:
+                try:freedrive.disable_and_restore()
+                except Exception as restore_error:print(f"ERROR: failed to restore controller after freedrive setup error: {restore_error}",flush=True)
+            node.destroy_node();rclpy.shutdown();update_status(root,"failed","could not enable freedrive");raise
     try:
         bag_pid=bag.start()
     except Exception:

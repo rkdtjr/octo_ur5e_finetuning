@@ -1,28 +1,71 @@
-data/raw/*
-data/rlds/*
-runs/*
-cache/*
-!data/raw/.gitkeep
-!data/rlds/.gitkeep
-!runs/checkpoints/.gitkeep
-!cache/.gitkeep
+# Python
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.venv/
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local Python environments
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ROS / Python build outputs
 build/
 install/
 log/
+dist/
+
+# Collected, processed, and RLDS datasets
+data/raw/**
+data/rlds/**
+data/*/raw/**
+data/*/rlds/**
+data/*/processing_summary.json
+data/processing_summary.json
+
+# Keep empty canonical dataset roots in Git
+!data/raw/.gitkeep
+!data/rlds/.gitkeep
+
+# Local dataset backups are never source-controlled
+data_backup/**
+
+# Training checkpoints, logs, W&B records, and policy logs
+runs/**
+!runs/checkpoints/
+!runs/checkpoints/.gitkeep
+wandb/
+
+# Download/model caches
+cache/**
+!cache/.gitkeep
+
+# Large generated artifacts outside the canonical data/run roots
 *.npz
 *.npy
 *.tfrecord*
 *.ckpt
-*.jpg
-*.jpeg
-*.png
 *.db3
 *.mcap
 *.mkv
 *.mp4
-data/raw/**/rosbag2/metadata.yaml
+*.log
+
+# Local archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz

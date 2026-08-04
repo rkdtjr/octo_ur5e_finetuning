@@ -1,0 +1,290 @@
+{
+  "schema_version": 1,
+  "source_root": "/home/sixr/octo_ur5e_finetuning/data/raw",
+  "include_grades": [
+    "GOOD",
+    "WARNING"
+  ],
+  "require_wrist": false,
+  "val_episode_count": 3,
+  "val_episode_ids": [
+    "20260731_182821_88d3e85a",
+    "20260731_183703_30e05fe3",
+    "20260731_192450_5269b2f7"
+  ],
+  "trajectory_count": 37,
+  "train_count": 31,
+  "val_count": 6,
+  "skipped": [
+    {
+      "episode_id": "20260731_183954_7b5d587b",
+      "reason": "quality_bad"
+    },
+    {
+      "episode_id": "20260731_192450_5269b2f7",
+      "segment_id": 1,
+      "reason": "fewer_than_2_steps"
+    }
+  ],
+  "trajectories": [
+    {
+      "episode_id": "20260731_182821_88d3e85a",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_182821_88d3e85a",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260731_183703_30e05fe3",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_183703_30e05fe3",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260731_183755_ec555ea6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_183755_ec555ea6",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_183852_61347c51",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_183852_61347c51",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_183852_61347c51",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_183852_61347c51",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_183852_61347c51",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_183852_61347c51",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184041_2ad33201",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184041_2ad33201",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184041_2ad33201",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184041_2ad33201",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184041_2ad33201",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184041_2ad33201",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184124_b7c808f6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184124_b7c808f6",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184124_b7c808f6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184124_b7c808f6",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184213_0c99b0e6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184213_0c99b0e6",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184213_0c99b0e6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184213_0c99b0e6",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184315_8f739699",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184315_8f739699",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184315_8f739699",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184315_8f739699",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184315_8f739699",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184315_8f739699",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184315_8f739699",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184315_8f739699",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184359_c25768c6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184359_c25768c6",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184359_c25768c6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184359_c25768c6",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_184359_c25768c6",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_184359_c25768c6",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_192450_5269b2f7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_192450_5269b2f7",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260731_192450_5269b2f7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_192450_5269b2f7",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260731_192450_5269b2f7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_192450_5269b2f7",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260731_192450_5269b2f7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_192450_5269b2f7",
+      "segment_id": 4,
+      "quality_grade": "WARNING",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 4,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 5,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193146_bb4f09a1",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193146_bb4f09a1",
+      "segment_id": 6,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193237_f7e2bda4",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193237_f7e2bda4",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193344_7b62bc54",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193344_7b62bc54",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193344_7b62bc54",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193344_7b62bc54",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193344_7b62bc54",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193344_7b62bc54",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193344_7b62bc54",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193344_7b62bc54",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260731_193625_06ad90a9",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/raw/20260731_193625_06ad90a9",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    }
+  ]
+}

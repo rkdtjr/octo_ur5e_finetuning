@@ -8,9 +8,26 @@ version = "0.2.0"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.23,<2", "PyYAML>=6", "scipy>=1.9"]
 
+[project.optional-dependencies]
+rlds = ["tensorflow>=2.16,<2.19", "tensorflow-datasets>=4.9,<5", "tensorflow-metadata>=1.17,<1.18", "importlib-resources>=5.9"]
+
 [project.scripts]
 octo-collector = "octo_ur5e_collector.collector_cli:main"
 octo-wrist-camera = "octo_ur5e_collector.wrist_bayer_camera_node:main"
+octo-process-episode = "processing.synchronize_episode:main"
+octo-process-batch = "processing.batch_process:main"
+octo-inspect-processed = "processing.inspect_processed:main"
+octo-evaluate-processed = "processing.evaluate_quality:main"
+octo-dataset = "rlds_builder.pipeline:main"
+octo-check-dataset = "training.check_dataset:main"
+octo-train = "training.doctor:main"
+octo-plot-metrics = "training.plot_metrics:main"
+octo-policy = "inference.octo_ur5e_inference:main"
 
 [tool.setuptools.packages.find]
-where = ["collector"]
+where = ["collector", "."]
+include = ["octo_ur5e_collector*", "processing*", "rlds_builder*", "training*", "inference*"]
+exclude = ["processing.tests*", "processing_backup*"]
+
+[tool.setuptools.package-data]
+processing = ["quality_thresholds.yaml"]

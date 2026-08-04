@@ -1,18 +1,33 @@
-"""Selected-frame H.264 decode helpers for the future RLDS builder."""
-from __future__ import annotations
-import cv2
-import numpy as np
+"""Selected-frame video decode boundary for a future RLDS builder.
 
-def decode_selected_rgb(video_path,indices):
-    wanted=sorted(set(int(x) for x in indices if int(x)>=0));out={}
-    cap=cv2.VideoCapture(str(video_path));i=0;target_pos=0
+This module deliberately does not build RLDS/TFRecord files. OpenCV is imported
+only when decoding is requested, so timestamp/state processing remains usable
+without it.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from collections.abc import Iterable
+
+
+def decode_selected_rgb(video_path: str | Path, indices: Iterable[int]):
+    import cv2
+
+    requested=[int(value) for value in indices]
+    if any(value<0 for value in requested):
+        raise ValueError("frame indices must be nonnegative")
+    wanted=sorted(set(requested));decoded={}
+    capture=cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():raise RuntimeError(f"cannot open video: {video_path}")
+    frame_index=0;target_index=0
     try:
-        while target_pos<len(wanted):
-            ok,bgr=cap.read()
-            if not ok:raise RuntimeError(f"video ended before selected frame {wanted[target_pos]}")
-            if i==wanted[target_pos]:
-                out[i]=cv2.cvtColor(bgr,cv2.COLOR_BGR2RGB)
-                target_pos+=1
-            i+=1
-    finally:cap.release()
-    return [out[int(i)] for i in indices if int(i)>=0]
+        while target_index<len(wanted):
+            ok,bgr=capture.read()
+            if not ok:raise RuntimeError(f"video ended before selected frame {wanted[target_index]}")
+            if frame_index==wanted[target_index]:
+                decoded[frame_index]=cv2.cvtColor(bgr,cv2.COLOR_BGR2RGB)
+                target_index+=1
+            frame_index+=1
+    finally:
+        capture.release()
+    return [decoded[index] for index in requested]
