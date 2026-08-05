@@ -14,6 +14,13 @@ def test_open_high_gripper_is_adapted_to_executor_closed_high():
     np.testing.assert_allclose(adapt_gripper_semantics([1,2,3,4,5,6,.8],"closed_high"),[1,2,3,4,5,6,.8])
     with pytest.raises(ValueError):adapt_gripper_semantics(np.zeros(7),"unknown")
 
+def test_open_high_model_values_drive_executor_semantics():
+    filt=GripperDebouncer(.7,.3,1,1)
+    model_closed=adapt_gripper_semantics([0,0,0,0,0,0,0],"open_high")[6]
+    model_open=adapt_gripper_semantics([0,0,0,0,0,0,1],"open_high")[6]
+    assert model_closed==1 and filt.update(model_closed,0)==1
+    assert model_open==0 and filt.update(model_open,1)==0
+
 def test_policy_rejects_nonfinite_and_outside_workspace():
     with pytest.raises(ValueError):limit_action([np.nan]*7)
     with pytest.raises(ValueError):validate_target_position([0,0,0])

@@ -16,6 +16,11 @@ ACTION_DIMENSION = 7
 ACTION_NAMES = ("dx", "dy", "dz", "drx", "dry", "drz", "gripper")
 
 
+def invert_gripper_actions(gripper: np.ndarray) -> np.ndarray:
+    """Convert collector semantics (0=open,1=close) -> Octo semantics (0=close,1=open)."""
+    return 1.0 - gripper.astype(np.float32)
+
+
 def build_relative_actions(
     tcp_positions: np.ndarray,
     tcp_quaternions_xyzw: np.ndarray,
@@ -59,9 +64,12 @@ def build_relative_actions(
         actions[index, :6] = relative_pose_action(
             transforms[index], transforms[index + 1], frame=frame
         )
-    actions[:, 6] = (
-        gripper[1:] if gripper_target == "next" else gripper[:-1]
-    ).astype(np.float32)
+    gripper_actions = (
+        gripper[1:] if gripper_target == "next"
+        else gripper[:-1]
+    )
+
+    actions[:, 6] = invert_gripper_actions(gripper_actions)
     return actions
 
 

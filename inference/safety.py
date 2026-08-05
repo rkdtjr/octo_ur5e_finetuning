@@ -33,6 +33,7 @@ def validate_target_position(position,minimum=DEFAULT_WORKSPACE_MIN,maximum=DEFA
 
 
 def gripper_transition(value,current,close_threshold=.7,open_threshold=.3):
+    """Apply hysteresis to executor semantics: 0=open, 1=closed."""
     value=float(value)
     if current is None:return 1 if value>=close_threshold else 0
     if current==0 and value>=close_threshold:return 1
@@ -41,8 +42,8 @@ def gripper_transition(value,current,close_threshold=.7,open_threshold=.3):
 
 
 class GripperDebouncer:
-    """Stateful hysteresis requiring consecutive evidence before switching."""
-    def __init__(self,close_threshold=.9,open_threshold=.1,close_steps=3,open_steps=3):
+    """Debounce executor semantics after model-semantics adaptation."""
+    def __init__(self,close_threshold=.7,open_threshold=.3,close_steps=3,open_steps=3):
         if not 0<=open_threshold<close_threshold<=1:raise ValueError("gripper thresholds must satisfy 0 <= open < close <= 1")
         if close_steps<1 or open_steps<1:raise ValueError("gripper debounce steps must be positive")
         self.close_threshold=float(close_threshold);self.open_threshold=float(open_threshold)
