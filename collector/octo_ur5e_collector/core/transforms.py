@@ -45,3 +45,11 @@ def apply_relative_pose_action(current_T,delta6,frame="tool"):
         N[:3,3]=C[:3,3]+d[:3]; N[:3,:3]=Rotation.from_rotvec(d[3:]).as_matrix()@C[:3,:3]
     else: raise ValueError("frame must be tool or base")
     return N
+
+def apply_base_euler_xyz_action(current_T,delta6):
+    """Apply Bridge-style base-frame XYZ translation and Euler component delta."""
+    validate_transform(current_T); C=np.asarray(current_T); d=np.asarray(delta6,float)
+    if d.shape!=(6,) or not np.isfinite(d).all():raise ValueError("delta6 must be finite")
+    current_euler=Rotation.from_matrix(C[:3,:3]).as_euler("xyz")
+    N=np.eye(4);N[:3,3]=C[:3,3]+d[:3];N[:3,:3]=Rotation.from_euler("xyz",current_euler+d[3:]).as_matrix()
+    return N

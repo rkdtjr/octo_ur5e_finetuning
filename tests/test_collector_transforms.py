@@ -16,3 +16,10 @@ def test_delta(frame):
 @pytest.mark.parametrize("T",[np.eye(3),np.diag([1,1,-1,1]),np.diag([1,2,1,1])])
 def test_invalid(T):
     with pytest.raises(ValueError):validate_transform(T)
+
+def test_bridge_base_euler_xyz_delta():
+    current=np.eye(4);current[:3,3]=[.4,.2,.3];current[:3,:3]=Rotation.from_euler("xyz",[.1,-.2,.3]).as_matrix()
+    delta=np.array([.01,-.02,.03,.04,.05,-.06])
+    target=apply_base_euler_xyz_action(current,delta)
+    np.testing.assert_allclose(target[:3,3],[.41,.18,.33])
+    np.testing.assert_allclose(target[:3,:3],Rotation.from_euler("xyz",[.14,-.15,.24]).as_matrix())

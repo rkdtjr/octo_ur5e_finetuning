@@ -4,9 +4,9 @@ import argparse,base64,json,select,subprocess,time
 from collections import deque
 from pathlib import Path
 import cv2,numpy as np
-from inference.safety import GripperDebouncer,limit_action,validate_target_position
+from inference.safety import GripperDebouncer,adapt_gripper_semantics,limit_action,validate_target_position
 from octo_ur5e_collector.core.config import load_config
-from octo_ur5e_collector.core.transforms import apply_relative_pose_action,matrix_to_quaternion_pose,quaternion_pose_to_matrix,relative_pose_action
+from octo_ur5e_collector.core.transforms import apply_base_euler_xyz_action,apply_relative_pose_action,matrix_to_quaternion_pose,quaternion_pose_to_matrix,relative_pose_action
 
 DEFAULT_CHECKPOINT="runs/octo_ur5e/pick/ur5e_pick_resume_1k_to_10k_20260801_systemd_20260801_014940"
 
@@ -47,8 +47,10 @@ def select_synchronized_pair(primary_history,wrist_history,history_sec=.1,histor
     return [previous[1],latest[1]],wrist,gap_sec,max(errors)
 
 class Worker:
-    def __init__(self,checkpoint,step,python,use_wrist=False):
-        command=[python,"-m","inference.model_worker","--checkpoint",str(checkpoint),"--step",str(step)]
+    def __init__(self,checkpoint,step,python,use_wrist=False,dataset_statistics_key=None):
+        command=[python,"-m","inference.model_worker","--checkpoint",str(checkpoint)]
+        if step is not None:command.extend(["--step",str(step)])
+        if dataset_statistics_key:command.extend(["--dataset-statistics-key",dataset_statistics_key])
         if use_wrist:command.append("--use-wrist")
         self.process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1)
         ready=json.loads(self.process.stdout.readline())
@@ -82,6 +84,11 @@ def run(args):
     from octo_ur5e_collector.ros_adapters.camera_video_recorder import image_message_to_bgr
     from octo_ur5e_collector.ros_adapters.preflight import run_preflight,preflight_ok
     config=load_config(args.config);d=config.data
+    pretrained_variant="base" if args.octo_base else "small" if args.octo_small else None
+    if pretrained_variant:
+        args.checkpoint=f"hf://rail-berkeley/octo-{pretrained_variant}-1.5";args.step=None;args.dataset_statistics_key="bridge_dataset";args.action_frame="base";args.rotation_representation="euler_xyz";args.gripper_model_semantics="open_high"
+        if args.use_wrist:raise ValueError(f"--octo-{pretrained_variant} bridge adapter uses the primary camera only; remove --use-wrist")
+        if args.execute and not args.allow_cross_embodiment_execution:raise ValueError(f"Octo-{pretrained_variant.title()} uses Bridge/WidowX actions; --execute additionally requires --allow-cross-embodiment-execution")
     if args.execute and not args.confirm_real_robot:raise ValueError("--execute requires --confirm-real-robot")
     checks=run_preflight(config,execute=args.execute,replay=False,motion=args.execute)
     for check in checks:print(f"{'OK' if check.ok else 'FAIL'} {check.name}: {check.detail}",flush=True)
@@ -127,7 +134,8 @@ def run(args):
             if not tf_ready:missing.append(f'TF {d["robot"]["base_frame"]} -> {d["robot"]["tcp_frame"]}')
             raise RuntimeError("startup timed out waiting for: "+", ".join(missing))
         rclpy.spin_once(node,timeout_sec=.05)
-    worker=Worker(Path(args.checkpoint).resolve(),args.step,args.octo_python,args.use_wrist);grip=None;gripper=None;client=None
+    checkpoint=args.checkpoint if "://" in args.checkpoint else str(Path(args.checkpoint).resolve())
+    worker=Worker(checkpoint,args.step,args.octo_python,args.use_wrist,args.dataset_statistics_key);grip=None;gripper=None;client=None
     gripper_filter=GripperDebouncer(args.gripper_close_threshold,args.gripper_open_threshold,args.gripper_close_debounce_steps,args.gripper_open_debounce_steps)
     if args.execute:
         from octo_ur5e_collector.ros_adapters.digital_output_gripper import DigitalOutputGripperAdapter
@@ -150,7 +158,7 @@ def run(args):
     log_path.parent.mkdir(parents=True,exist_ok=True);log_handle=log_path.open("x",encoding="utf-8");print(f"policy_log: {log_path.resolve()}",flush=True)
     def emit(record):
         line=json.dumps(record);print(line,flush=True);log_handle.write(line+"\n");log_handle.flush()
-    emit({"event":"run_start","mode":"EXECUTE" if args.execute else "DRY_RUN","current_step":0,"max_steps":args.max_steps,"action_interval_sec":args.command_duration_sec,"action_chunk_steps":args.action_chunk_steps,"close_threshold":args.gripper_close_threshold,"open_threshold":args.gripper_open_threshold,"close_debounce_steps":args.gripper_close_debounce_steps,"open_debounce_steps":args.gripper_open_debounce_steps})
+    emit({"event":"run_start","mode":"EXECUTE" if args.execute else "DRY_RUN","current_step":0,"max_steps":args.max_steps,"action_interval_sec":args.command_duration_sec,"action_chunk_steps":args.action_chunk_steps,"checkpoint":checkpoint,"checkpoint_step":args.step,"pretrained_variant":pretrained_variant,"octo_base":args.octo_base,"octo_small":args.octo_small,"dataset_statistics_key":args.dataset_statistics_key,"action_frame":args.action_frame,"rotation_representation":args.rotation_representation,"gripper_model_semantics":args.gripper_model_semantics,"close_threshold":args.gripper_close_threshold,"open_threshold":args.gripper_open_threshold,"close_debounce_steps":args.gripper_close_debounce_steps,"open_debounce_steps":args.gripper_open_debounce_steps})
     stop_reason="unknown";step=0
     try:
         while rclpy.ok() and step<args.max_steps:
@@ -174,10 +182,14 @@ def run(args):
             else:
                 frames=[frame.copy() for frame in frames];wrist_frames=[frame.copy() for frame in wrist_frames]
             predicted=worker.infer(frames,args.instruction,wrist_frames=wrist_frames,on_wait=lambda:rclpy.spin_once(node,timeout_sec=.01))
-            count=min(len(predicted),args.action_chunk_steps,args.max_steps-step);raw_chunk=predicted[:count];safe_chunk=[limit_action(raw,args.max_translation_m,args.max_rotation_rad) for raw in raw_chunk]
+            count=min(len(predicted),args.action_chunk_steps,args.max_steps-step);raw_chunk=predicted[:count];adapted_chunk=[adapt_gripper_semantics(raw,args.gripper_model_semantics) for raw in raw_chunk];safe_chunk=[limit_action(adapted,args.max_translation_m,args.max_rotation_rad) for adapted in adapted_chunk]
             before=current_tcp();target=before.copy();targets=[]
             for safe in safe_chunk:
-                target=apply_relative_pose_action(target,safe[:6],"tool");validate_target_position(target[:3,3]);targets.append(target.copy())
+                if args.rotation_representation=="euler_xyz":
+                    if args.action_frame!="base":raise RuntimeError("euler_xyz actions require base frame")
+                    target=apply_base_euler_xyz_action(target,safe[:6])
+                else:target=apply_relative_pose_action(target,safe[:6],args.action_frame)
+                validate_target_position(target[:3,3]);targets.append(target.copy())
             if args.execute:
                 joint_seed=latest["joints"].copy();joint_targets=[]
                 for target in targets:
@@ -227,11 +239,11 @@ def run(args):
                     ratio=actual_norm/command_norm if actual_norm is not None and command_norm>1e-12 else None
                     pose_error=relative_pose_action(actual,target,"tool") if actual is not None else None
                     reached=bool(np.linalg.norm(pose_error[:3])<=args.goal_translation_tolerance_m and np.linalg.norm(pose_error[3:])<=args.goal_rotation_tolerance_rad) if pose_error is not None else None
-                    emit({"event":"step","step":step+chunk_index,"current_step":step+chunk_index+1,"max_steps":args.max_steps,"stop_reason":None,"chunk_index":chunk_index,"mode":"EXECUTE","observation_history_ms":history_gap_sec*1000,"action_interval_sec":args.command_duration_sec,"controller_time_at_measurement_sec":captured_progress[chunk_index],"trajectory_result_wall_time_sec":result_wall-send_wall,"next_goal_sent_before_previous_result":False,"translation_clamp_m":args.max_translation_m,"policy_action":raw.tolist(),"clamped_command":safe.tolist(),"command_translation_norm_m":command_norm,"actual_tcp_delta":actual_delta.tolist() if actual_delta is not None else None,"actual_translation_norm_m":actual_norm,"actual_to_command_ratio":ratio,"target_pose_error":pose_error.tolist() if pose_error is not None else None,"target_reached":reached,"gripper_policy_value":float(safe[6]),"gripper_semantic_state":int(grip_states[chunk_index]),"gripper_hysteresis":{"close_threshold":args.gripper_close_threshold,"open_threshold":args.gripper_open_threshold,"close_debounce_steps":args.gripper_close_debounce_steps,"open_debounce_steps":args.gripper_open_debounce_steps},"target_xyz":target[:3,3].tolist(),"actual_xyz":actual[:3,3].tolist() if actual is not None else None})
+                    emit({"event":"step","step":step+chunk_index,"current_step":step+chunk_index+1,"max_steps":args.max_steps,"stop_reason":None,"chunk_index":chunk_index,"mode":"EXECUTE","observation_history_ms":history_gap_sec*1000,"action_interval_sec":args.command_duration_sec,"controller_time_at_measurement_sec":captured_progress[chunk_index],"trajectory_result_wall_time_sec":result_wall-send_wall,"next_goal_sent_before_previous_result":False,"translation_clamp_m":args.max_translation_m,"policy_action":raw.tolist(),"adapted_action":adapted_chunk[chunk_index].tolist(),"clamped_command":safe.tolist(),"command_translation_norm_m":command_norm,"actual_tcp_delta":actual_delta.tolist() if actual_delta is not None else None,"actual_translation_norm_m":actual_norm,"actual_to_command_ratio":ratio,"target_pose_error":pose_error.tolist() if pose_error is not None else None,"target_reached":reached,"gripper_policy_value":float(safe[6]),"gripper_semantic_state":int(grip_states[chunk_index]),"gripper_hysteresis":{"close_threshold":args.gripper_close_threshold,"open_threshold":args.gripper_open_threshold,"close_debounce_steps":args.gripper_close_debounce_steps,"open_debounce_steps":args.gripper_open_debounce_steps},"target_xyz":target[:3,3].tolist(),"actual_xyz":actual[:3,3].tolist() if actual is not None else None})
             else:
                 for chunk_index,(raw,safe,target) in enumerate(zip(raw_chunk,safe_chunk,targets)):
                     desired=gripper_filter.update(safe[6],grip);grip=desired
-                    emit({"event":"step","step":step+chunk_index,"current_step":step+chunk_index+1,"max_steps":args.max_steps,"stop_reason":None,"chunk_index":chunk_index,"mode":"DRY_RUN","observation_history_ms":history_gap_sec*1000,"action_interval_sec":args.command_duration_sec,"next_goal_sent_before_previous_result":False,"translation_clamp_m":args.max_translation_m,"policy_action":raw.tolist(),"clamped_command":safe.tolist(),"command_translation_norm_m":float(np.linalg.norm(safe[:3])),"actual_tcp_delta":None,"actual_translation_norm_m":None,"actual_to_command_ratio":None,"target_reached":None,"gripper_policy_value":float(safe[6]),"gripper_semantic_state":int(grip),"gripper_hysteresis":{"close_threshold":args.gripper_close_threshold,"open_threshold":args.gripper_open_threshold,"close_debounce_steps":args.gripper_close_debounce_steps,"open_debounce_steps":args.gripper_open_debounce_steps},"target_xyz":target[:3,3].tolist()})
+                    emit({"event":"step","step":step+chunk_index,"current_step":step+chunk_index+1,"max_steps":args.max_steps,"stop_reason":None,"chunk_index":chunk_index,"mode":"DRY_RUN","observation_history_ms":history_gap_sec*1000,"action_interval_sec":args.command_duration_sec,"next_goal_sent_before_previous_result":False,"translation_clamp_m":args.max_translation_m,"policy_action":raw.tolist(),"adapted_action":adapted_chunk[chunk_index].tolist(),"clamped_command":safe.tolist(),"command_translation_norm_m":float(np.linalg.norm(safe[:3])),"actual_tcp_delta":None,"actual_translation_norm_m":None,"actual_to_command_ratio":None,"target_reached":None,"gripper_policy_value":float(safe[6]),"gripper_semantic_state":int(grip),"gripper_hysteresis":{"close_threshold":args.gripper_close_threshold,"open_threshold":args.gripper_open_threshold,"close_debounce_steps":args.gripper_close_debounce_steps,"open_debounce_steps":args.gripper_open_debounce_steps},"target_xyz":target[:3,3].tolist()})
             step+=count
         stop_reason="max_steps_reached" if step>=args.max_steps else "ros_shutdown"
         emit({"event":"run_stop","stop_reason":stop_reason,"current_step":step,"max_steps":args.max_steps})
@@ -244,7 +256,7 @@ def run(args):
         if rclpy.ok():rclpy.shutdown()
 
 def main(argv=None):
-    parser=argparse.ArgumentParser(prog="octo-policy");parser.add_argument("--checkpoint",default=DEFAULT_CHECKPOINT);parser.add_argument("--step",type=int,default=10000);parser.add_argument("--config",default="collector/config/collector.yaml");parser.add_argument("--instruction",default="pick up the blue object");parser.add_argument("--octo-python",default="/home/sixr/miniconda3/envs/octo_env/bin/python");parser.add_argument("--log-file");parser.add_argument("--use-wrist",action="store_true");parser.add_argument("--camera-sync-tolerance-sec",type=float,default=.04);parser.add_argument("--rate-hz",type=float,default=2.0,help=argparse.SUPPRESS);parser.add_argument("--max-steps",type=int,default=20);parser.add_argument("--action-chunk-steps",type=int,default=4);parser.add_argument("--observation-history-sec",type=float,default=.1);parser.add_argument("--observation-history-tolerance-sec",type=float,default=.03);parser.add_argument("--max-translation-m",type=float,default=.005);parser.add_argument("--max-rotation-rad",type=float,default=.02);parser.add_argument("--max-joint-step-rad",type=float,default=.08);parser.add_argument("--command-duration-sec",type=float,default=.1);parser.add_argument("--goal-translation-tolerance-m",type=float,default=.001);parser.add_argument("--goal-rotation-tolerance-rad",type=float,default=.01);parser.add_argument("--gripper-close-threshold",type=float,default=.9);parser.add_argument("--gripper-open-threshold",type=float,default=.1);parser.add_argument("--gripper-close-debounce-steps",type=int,default=3);parser.add_argument("--gripper-open-debounce-steps",type=int,default=3);parser.add_argument("--startup-timeout-sec",type=float,default=10.0);parser.add_argument("--max-tf-age-sec",type=float,default=.5);parser.add_argument("--move-group",default="ur_manipulator");parser.add_argument("--execute",action="store_true");parser.add_argument("--confirm-real-robot",action="store_true")
+    parser=argparse.ArgumentParser(prog="octo-policy");parser.add_argument("--checkpoint",default=DEFAULT_CHECKPOINT);parser.add_argument("--step",type=int,default=10000);pretrained=parser.add_mutually_exclusive_group();pretrained.add_argument("--octo-base",action="store_true",help="use pretrained Octo-Base 1.5 with the guarded Bridge/WidowX action adapter");pretrained.add_argument("--octo-small",action="store_true",help="use pretrained Octo-Small 1.5 with the guarded Bridge/WidowX action adapter");parser.add_argument("--dataset-statistics-key");parser.add_argument("--action-frame",choices=("tool","base"),default="tool");parser.add_argument("--rotation-representation",choices=("rotation_vector","euler_xyz"),default="rotation_vector");parser.add_argument("--gripper-model-semantics",choices=("closed_high","open_high"),default="closed_high");parser.add_argument("--allow-cross-embodiment-execution",action="store_true");parser.add_argument("--config",default="collector/config/collector.yaml");parser.add_argument("--instruction",default="pick up the blue object");parser.add_argument("--octo-python",default="/home/sixr/miniconda3/envs/octo_env/bin/python");parser.add_argument("--log-file");parser.add_argument("--use-wrist",action="store_true");parser.add_argument("--camera-sync-tolerance-sec",type=float,default=.04);parser.add_argument("--rate-hz",type=float,default=2.0,help=argparse.SUPPRESS);parser.add_argument("--max-steps",type=int,default=20);parser.add_argument("--action-chunk-steps",type=int,default=4);parser.add_argument("--observation-history-sec",type=float,default=.1);parser.add_argument("--observation-history-tolerance-sec",type=float,default=.03);parser.add_argument("--max-translation-m",type=float,default=.005);parser.add_argument("--max-rotation-rad",type=float,default=.02);parser.add_argument("--max-joint-step-rad",type=float,default=.08);parser.add_argument("--command-duration-sec",type=float,default=.1);parser.add_argument("--goal-translation-tolerance-m",type=float,default=.001);parser.add_argument("--goal-rotation-tolerance-rad",type=float,default=.01);parser.add_argument("--gripper-close-threshold",type=float,default=.7);parser.add_argument("--gripper-open-threshold",type=float,default=.3);parser.add_argument("--gripper-close-debounce-steps",type=int,default=3);parser.add_argument("--gripper-open-debounce-steps",type=int,default=3);parser.add_argument("--startup-timeout-sec",type=float,default=10.0);parser.add_argument("--max-tf-age-sec",type=float,default=.5);parser.add_argument("--move-group",default="ur_manipulator");parser.add_argument("--execute",action="store_true");parser.add_argument("--confirm-real-robot",action="store_true")
     args=parser.parse_args(argv)
     positive=(args.rate_hz,args.max_steps,args.action_chunk_steps,args.gripper_close_debounce_steps,args.gripper_open_debounce_steps,args.observation_history_sec,args.observation_history_tolerance_sec,args.camera_sync_tolerance_sec,args.max_translation_m,args.max_rotation_rad,args.max_joint_step_rad,args.command_duration_sec,args.goal_translation_tolerance_m,args.goal_rotation_tolerance_rad,args.startup_timeout_sec,args.max_tf_age_sec)
     if any(value<=0 for value in positive):parser.error("rate, step count, timeouts, and safety limits must be positive")

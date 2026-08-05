@@ -1,0 +1,462 @@
+{
+  "schema_version": 1,
+  "source_root": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw",
+  "include_grades": [
+    "GOOD",
+    "WARNING",
+    "BAD"
+  ],
+  "require_wrist": true,
+  "val_episode_count": 3,
+  "val_episode_ids": [
+    "20260803_212853_b237f031",
+    "20260804_145947_76735930",
+    "20260804_150218_bb48cada"
+  ],
+  "trajectory_count": 62,
+  "train_count": 59,
+  "val_count": 3,
+  "skipped": [
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "segment_id": 4,
+      "reason": "fewer_than_2_steps"
+    }
+  ],
+  "trajectories": [
+    {
+      "episode_id": "20260803_212502_4acb4014",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_212502_4acb4014",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_212502_4acb4014",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_212502_4acb4014",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_212502_4acb4014",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_212502_4acb4014",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_212853_b237f031",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_212853_b237f031",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_213319_be510b1b",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_213319_be510b1b",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_213319_be510b1b",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_213319_be510b1b",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_213319_be510b1b",
+      "segment_id": 5,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_213319_be510b1b",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_213319_be510b1b",
+      "segment_id": 6,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_214001_a954bf19",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_214001_a954bf19",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_214001_a954bf19",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_214001_a954bf19",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260803_214309_412383ca",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260803_214309_412383ca",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145054_691d99bb",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145054_691d99bb",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145316_7de58a55",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145316_7de58a55",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145316_7de58a55",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145316_7de58a55",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145316_7de58a55",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145316_7de58a55",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145605_575f5544",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145605_575f5544",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145605_575f5544",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145605_575f5544",
+      "segment_id": 1,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_145947_76735930",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_145947_76735930",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260804_150218_bb48cada",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_150218_bb48cada",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "val"
+    },
+    {
+      "episode_id": "20260804_150556_1b04cf01",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_150556_1b04cf01",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_150556_1b04cf01",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_150556_1b04cf01",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_150905_e5745c3f",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_150905_e5745c3f",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_151141_059a631c",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_151141_059a631c",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_151425_161e296a",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_151425_161e296a",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_151719_5342feb0",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_151719_5342feb0",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_152521_3a50a5bc",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_152521_3a50a5bc",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_152521_3a50a5bc",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_152521_3a50a5bc",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_152521_3a50a5bc",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_152521_3a50a5bc",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_152521_3a50a5bc",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_152521_3a50a5bc",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_152521_3a50a5bc",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_152521_3a50a5bc",
+      "segment_id": 4,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_152811_613e1e57",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_152811_613e1e57",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_153401_b6cf8ac2",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_153401_b6cf8ac2",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_211712_242479f9",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_211712_242479f9",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_212115_91b21345",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_212115_91b21345",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_212400_32a39046",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_212400_32a39046",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_212635_c9483daf",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_212635_c9483daf",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_212946_e4e93136",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_212946_e4e93136",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_212946_e4e93136",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_212946_e4e93136",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_213230_387962d7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_213230_387962d7",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_213230_387962d7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_213230_387962d7",
+      "segment_id": 1,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_213230_387962d7",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_213230_387962d7",
+      "segment_id": 2,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_213746_a6614b09",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_213746_a6614b09",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 4,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 5,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 6,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214153_cb381a97",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214153_cb381a97",
+      "segment_id": 7,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214527_a8285d15",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214527_a8285d15",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214527_a8285d15",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214527_a8285d15",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214527_a8285d15",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214527_a8285d15",
+      "segment_id": 2,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214527_a8285d15",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214527_a8285d15",
+      "segment_id": 3,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214939_07b37ad2",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214939_07b37ad2",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_214939_07b37ad2",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_214939_07b37ad2",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_220130_7ce343bf",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_220130_7ce343bf",
+      "segment_id": 0,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_220130_7ce343bf",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_220130_7ce343bf",
+      "segment_id": 1,
+      "quality_grade": "GOOD",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_220430_7a290200",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_220430_7a290200",
+      "segment_id": 0,
+      "quality_grade": "WARNING",
+      "split": "train"
+    },
+    {
+      "episode_id": "20260804_220430_7a290200",
+      "episode_path": "/home/sixr/octo_ur5e_finetuning/data/pick_place/raw/20260804_220430_7a290200",
+      "segment_id": 1,
+      "quality_grade": "WARNING",
+      "split": "train"
+    }
+  ]
+}

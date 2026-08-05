@@ -16,6 +16,15 @@ def limit_action(action,max_translation_m=.003,max_rotation_rad=.02):
     value[6]=float(np.clip(value[6],0,1));return value
 
 
+def adapt_gripper_semantics(action,semantics="closed_high"):
+    """Convert a model action to the executor's semantic 0=open, 1=closed."""
+    value=np.asarray(action,float).copy()
+    if value.shape!=(7,) or not np.isfinite(value).all():raise ValueError("policy action must be finite shape (7,)")
+    if semantics=="open_high":value[6]=1.0-value[6]
+    elif semantics!="closed_high":raise ValueError("gripper semantics must be closed_high or open_high")
+    return value
+
+
 def validate_target_position(position,minimum=DEFAULT_WORKSPACE_MIN,maximum=DEFAULT_WORKSPACE_MAX):
     point=np.asarray(position,float);low=np.asarray(minimum,float);high=np.asarray(maximum,float)
     if point.shape!=(3,) or not np.isfinite(point).all():raise ValueError("target position must be finite shape (3,)")

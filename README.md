@@ -717,6 +717,81 @@ octo-policy \
 
 정책이 멈춘 경우 마지막 `run_stop.stop_reason`으로 `max_steps_reached`, keyboard interrupt, ROS shutdown, safety/IK 오류를 먼저 구분하십시오.
 
+### 11.3 Pretrained Octo-Base zero-shot 실험
+
+`--octo-base`는 fine-tuned checkpoint 대신 `hf://rail-berkeley/octo-base-1.5`를 로드하고 다음 Bridge/WidowX adapter를 자동 적용합니다.
+
+- action unnormalization: `bridge_dataset`
+- translation frame: robot base frame
+- rotation: Bridge XYZ Euler component delta
+- gripper: model의 `1=open, 0=closed`를 실행기의 `0=open, 1=closed`로 반전
+- observation: Primary 256×256, 0.1초 간격의 history 2
+- action horizon: 4
+
+먼저 observation-only dry-run을 수행합니다.
+
+```bash
+octo-policy \
+  --octo-base \
+  --config collector/config/pick_place.yaml \
+  --instruction "pick up the blue object and place it in the tray" \
+  --max-steps 20
+```
+
+`--octo-base`에서는 Bridge dataset이 Wrist camera를 사용하지 않았으므로 `--use-wrist`를 함께 사용할 수 없습니다. 로그의 `policy_action`은 원본 Bridge semantic이고 `adapted_action`은 UR5e 실행기 semantic으로 변환된 값입니다.
+
+Octo-Base는 WidowX/BridgeData 기반 action이며 UR5e fine-tune 모델이 아닙니다. Shape가 7D로 같아도 embodiment, camera viewpoint, workspace, kinematics와 action distribution은 다릅니다. 따라서 기본적으로 실제 실행을 차단합니다. 좌표계와 방향을 검증하기 위한 최초 1-step 명령에만 다음 두 개의 명시적 승인이 모두 필요합니다.
+
+```bash
+octo-policy \
+  --octo-base \
+  --config collector/config/pick_place.yaml \
+  --instruction "pick up the blue object and place it in the tray" \
+  --max-steps 1 \
+  --action-chunk-steps 1 \
+  --max-translation-m 0.001 \
+  --max-rotation-rad 0.005 \
+  --command-duration-sec 0.1 \
+  --execute \
+  --confirm-real-robot \
+  --allow-cross-embodiment-execution
+```
+
+이 실험은 zero-shot baseline 비교용입니다. 안정적인 Pick & Place에는 이 프로젝트에서 수집한 UR5e 데이터로 fine-tuned한 checkpoint를 우선 사용하십시오.
+
+### 11.4 Pretrained Octo-Small zero-shot 실험
+
+Octo-Small도 동일한 guarded Bridge/WidowX adapter로 실행할 수 있습니다. Base보다 모델이 작아 추론이 가볍지만 cross-embodiment 제한은 동일합니다.
+
+Dry-run:
+
+```bash
+octo-policy \
+  --octo-small \
+  --config collector/config/pick_place.yaml \
+  --instruction "pick up the blue object and place it in the tray" \
+  --max-steps 20
+```
+
+최초 실제 1-step 검증:
+
+```bash
+octo-policy \
+  --octo-small \
+  --config collector/config/pick_place.yaml \
+  --instruction "pick up the blue object and place it in the tray" \
+  --max-steps 1 \
+  --action-chunk-steps 1 \
+  --max-translation-m 0.001 \
+  --max-rotation-rad 0.005 \
+  --command-duration-sec 0.1 \
+  --execute \
+  --confirm-real-robot \
+  --allow-cross-embodiment-execution
+```
+
+`--octo-base`와 `--octo-small`은 상호 배타적이며 동시에 지정할 수 없습니다.
+
 ## 12. 주요 CLI 요약
 
 | 명령 | 용도 |
@@ -816,3 +891,321 @@ ROS `.venv`의 Python으로 공식 Octo fine-tuner를 실행한 것입니다. `c
 - `docs/official_sources.md`: 공식 참고 자료
 
 새로운 task를 추가할 때는 기존 기준 데이터의 config와 raw/RLDS를 복사·수정하지 말고, 새 collector YAML, 새 `storage.output_root`, 새 RLDS output, 새 training run name을 사용하십시오.
+
+## 부록 A. Pick & Place 30개를 Primary + Wrist로 학습하기
+
+이 절은 `data/pick_place/raw`의 30개 시연을 모두 사용하여 episode 단위로 **27 train / 3 validation**을 만들고, Octo-Small을 Primary + Wrist 입력으로 10,000 step head-only fine-tuning하는 순서입니다. 품질 등급은 제외 기준으로 사용하지 않습니다.
+
+작성 시점에는 30개 디렉터리 중 28개만 Replay가 완료되어 있습니다. 아래 두 episode는 `replay/episode_result.json`이 없으므로 먼저 Replay를 완료해야 합니다.
+
+```text
+20260804_145035_6282cfe3
+20260804_153315_5b363725
+```
+
+기존 `ur5e_pick_place_5ep_1val` RLDS와 기존 학습 run은 그대로 보존합니다. 아래 명령은 새 RLDS 경로 `ur5e_pick_place_30ep_3val`과 새 run name을 사용합니다.
+
+### A.1 누락된 두 episode Replay
+
+UR driver, 양쪽 카메라, MoveIt을 실행하고 PolyScope External Control 프로그램이 Play 상태인지 먼저 확인합니다. 다음 블록은 첫 번째 누락 episode를 시작 위치로 이동시킨 뒤 Replay하고, 종료 후 같은 위치로 복귀시킵니다.
+
+```bash
+# 프로젝트 루트로 이동합니다.
+cd /home/sixr/octo_ur5e_finetuning
+
+# ROS 2 Jazzy 명령과 패키지를 현재 셸에 등록합니다.
+source /opt/ros/jazzy/setup.bash
+
+# collector와 프로젝트 CLI가 설치된 가상환경을 활성화합니다.
+source .venv/bin/activate
+
+# Replay할 첫 번째 raw episode 경로를 지정합니다.
+EPISODE_PATH=data/pick_place/raw/20260804_145035_6282cfe3
+
+# 실제 로봇으로 Replay하고 양쪽 카메라 및 로봇 상태를 기록합니다.
+octo-collector replay "$EPISODE_PATH" \
+  --config collector/config/pick_place.yaml \
+  --move-to-start \
+  --move-to-start-duration-sec 8 \
+  --return-to-start \
+  --return-to-start-duration-sec 8 \
+  --wall-clock-gripper-fallback \
+  --execute
+```
+
+두 번째 episode도 같은 방식으로 실행합니다.
+
+```bash
+# Replay 대상만 두 번째 누락 episode로 바꿉니다.
+EPISODE_PATH=data/pick_place/raw/20260804_153315_5b363725
+
+# 동일한 안전 이동, Replay, 시작 위치 복귀 절차를 실행합니다.
+octo-collector replay "$EPISODE_PATH" \
+  --config collector/config/pick_place.yaml \
+  --move-to-start \
+  --move-to-start-duration-sec 8 \
+  --return-to-start \
+  --return-to-start-duration-sec 8 \
+  --wall-clock-gripper-fallback \
+  --execute
+```
+
+각 Replay가 `trajectory result received: error_code=0`으로 끝났는지 확인합니다. 실제 로봇에서 수행하는 단계이므로 로봇 주변을 비우고 비상 정지 수단을 준비하십시오.
+
+### A.2 30개 상태 및 의존성 검사
+
+```bash
+# 완결된 raw episode 수, Processing 대기 수, RLDS 의존성을 검사합니다.
+octo-dataset doctor data/pick_place/raw
+```
+
+`raw_episode_count`가 `30`, `can_process`와 `can_build_rlds`가 `true`여야 다음 단계로 진행할 수 있습니다. 여전히 28이면 누락 episode의 Replay 결과부터 확인합니다.
+
+### A.3 Processing dry-run과 실행
+
+```bash
+# 어떤 episode가 새로 처리되거나 stale로 재처리될지 변경 없이 미리 봅니다.
+octo-dataset process data/pick_place/raw --require-wrist
+
+# 실제 synchronized_episode.npz를 만들며 Wrist가 없는 episode는 허용하지 않습니다.
+octo-dataset process data/pick_place/raw --require-wrist --execute
+```
+
+기존의 정상 processed 결과는 재사용하고 pending/stale episode만 증분 처리합니다. `--force-process`는 전부 다시 만들 목적이 아니라면 사용하지 않습니다.
+
+### A.4 27/3 episode split 계획
+
+```bash
+# GOOD/WARNING/BAD를 모두 포함하고 Wrist가 유효한 episode만 대상으로 split을 계산합니다.
+octo-dataset plan data/pick_place/raw \
+  --include-grades GOOD,WARNING,BAD \
+  --require-wrist \
+  --val-episodes 3 \
+  --output data/pick_place/rlds_plan_30ep_3val.json
+```
+
+출력과 JSON에서 최종 포함 수가 30, train raw episode가 27, validation raw episode가 3인지 확인합니다. 분할은 episode 단위이므로 한 episode의 segment가 양쪽 split에 섞이지 않습니다.
+
+### A.5 새 RLDS dry-run과 생성
+
+```bash
+# 새 출력 경로에 무엇이 생성될지 미리 검사하며 파일은 쓰지 않습니다.
+octo-dataset build data/pick_place/raw \
+  --output data/pick_place/rlds/ur5e_pick_place_30ep_3val \
+  --include-grades GOOD,WARNING,BAD \
+  --require-wrist \
+  --val-episodes 3
+
+# 동일한 계획을 실제 TFDS/RLDS 파일로 생성합니다.
+octo-dataset build data/pick_place/raw \
+  --output data/pick_place/rlds/ur5e_pick_place_30ep_3val \
+  --include-grades GOOD,WARNING,BAD \
+  --require-wrist \
+  --val-episodes 3 \
+  --execute
+```
+
+출력 디렉터리가 이미 non-empty이면 builder가 덮어쓰지 않습니다. 실패한 출력을 다시 만들 때도 기존 디렉터리를 임의 삭제하지 말고 새 이름을 사용하거나 내용을 먼저 확인하십시오.
+
+### A.6 학습 전 RLDS 검사
+
+```bash
+# image_primary, image_wrist, action, mask, train/validation split의 shape와 값을 검사합니다.
+octo-check-dataset \
+  data/pick_place/rlds/ur5e_pick_place_30ep_3val/ur5e_pick/1.0.0
+```
+
+특히 `image_wrist`가 존재하고 `wrist_valid`가 정상이어야 합니다. 이 검사를 통과한 뒤 새 터미널에서 학습 환경으로 전환합니다.
+
+### A.7 학습 환경 준비 및 10-step smoke test
+
+ROS `.venv`와 Octo 학습용 Conda 환경을 동시에 활성화하지 않는 것이 안전합니다. 새 터미널을 열고 다음을 실행합니다.
+
+```bash
+# 프로젝트 루트로 이동합니다.
+cd /home/sixr/octo_ur5e_finetuning
+
+# Conda 셸 함수를 불러옵니다.
+source /home/sixr/miniconda3/etc/profile.d/conda.sh
+
+# flax/JAX/Octo가 설치된 학습 환경을 활성화합니다.
+conda activate octo_env
+
+# 프로젝트의 custom dataset/config 모듈을 Python 검색 경로에 추가합니다.
+export PYTHONPATH=/home/sixr/octo_ur5e_finetuning
+
+# JAX가 시작할 때 GPU 메모리를 전부 선점하지 않도록 합니다.
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+
+# 외부 로그인 없이 W&B 지표를 로컬에 저장합니다.
+export WANDB_MODE=offline
+
+# W&B offline run 저장 위치를 프로젝트 아래로 고정합니다.
+export WANDB_DIR=/home/sixr/octo_ur5e_finetuning/runs/wandb
+
+# 데이터셋, GPU, Octo checkout을 검사하고 실제 smoke 명령을 먼저 출력합니다.
+octo-train \
+  --dataset-dir data/pick_place/rlds/ur5e_pick_place_30ep_3val/ur5e_pick/1.0.0
+
+# Primary + Wrist config로 10 step만 학습하여 실제 양쪽 영상 입력 경로를 검증합니다.
+/home/sixr/miniconda3/envs/octo_env/bin/python \
+  /home/sixr/Desktop/octo/scripts/finetune.py \
+  --config=/home/sixr/octo_ur5e_finetuning/training/finetune_config.py:head_only,language_conditioned,wrist \
+  --name=pick_place_30ep_primary_wrist_smoke_10 \
+  --config.dataset_kwargs.data_dir=/home/sixr/octo_ur5e_finetuning/data/pick_place/rlds/ur5e_pick_place_30ep_3val \
+  --config.save_dir=/home/sixr/octo_ur5e_finetuning/runs \
+  --debug \
+  --config.num_steps=10 \
+  --config.eval_interval=10 \
+  --config.save_interval=10 \
+  --config.optimizer.learning_rate.warmup_steps=2 \
+  --config.viz_kwargs.trajs_for_viz=0
+```
+
+smoke가 traceback 없이 10/10 step까지 종료되는지 확인한 뒤 10k를 시작합니다. `--debug` smoke는 연결과 shape 검사용이며, 실제 보존할 checkpoint는 다음 10k run에서 생성합니다.
+
+### A.8 Primary + Wrist 10k 백그라운드 학습
+
+다음 명령은 Octo-Small pretrained checkpoint에서 새로 시작하며, `head_only,language_conditioned,wrist`, batch size 4, seed 42, window size 2, action horizon 4, action dimension 7 설정을 사용합니다. 500 step마다 validation하고 1,000 step마다 checkpoint를 저장합니다.
+
+```bash
+# 백그라운드 학습 로그 디렉터리를 만듭니다.
+mkdir -p /home/sixr/octo_ur5e_finetuning/runs/logs
+
+# 사용자 systemd transient service로 학습을 시작하여 터미널 종료 후에도 계속 실행합니다.
+systemd-run --user \
+  --unit=octo-pick-place-30ep-10k \
+  --collect \
+  --property=WorkingDirectory=/home/sixr/octo_ur5e_finetuning \
+  --property=StandardOutput=append:/home/sixr/octo_ur5e_finetuning/runs/logs/pick_place_30ep_primary_wrist_10k.log \
+  --property=StandardError=append:/home/sixr/octo_ur5e_finetuning/runs/logs/pick_place_30ep_primary_wrist_10k.log \
+  --setenv=PYTHONPATH=/home/sixr/octo_ur5e_finetuning \
+  --setenv=XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  --setenv=WANDB_MODE=offline \
+  --setenv=WANDB_DIR=/home/sixr/octo_ur5e_finetuning/runs/wandb \
+  /home/sixr/miniconda3/envs/octo_env/bin/python \
+  /home/sixr/Desktop/octo/scripts/finetune.py \
+  --config=/home/sixr/octo_ur5e_finetuning/training/finetune_config.py:head_only,language_conditioned,wrist \
+  --name=pick_place_30ep_primary_wrist_10k \
+  --config.dataset_kwargs.data_dir=/home/sixr/octo_ur5e_finetuning/data/pick_place/rlds/ur5e_pick_place_30ep_3val \
+  --config.save_dir=/home/sixr/octo_ur5e_finetuning/runs \
+  --config.num_steps=10000 \
+  --config.eval_interval=500 \
+  --config.save_interval=1000
+```
+
+각 핵심 인자의 역할은 다음과 같습니다.
+
+| 인자 | 역할 |
+|---|---|
+| `:head_only,language_conditioned,wrist` | action head만 학습하고 언어 및 Wrist 입력을 활성화 |
+| `--name=...30ep...10k` | 기존 run과 충돌하지 않는 실험 이름 지정 |
+| `dataset_kwargs.data_dir` | `ur5e_pick` 디렉터리의 바로 위 RLDS 루트를 지정 |
+| `num_steps=10000` | 총 optimizer update 수를 10,000으로 지정 |
+| `eval_interval=500` | 500 step마다 validation 수행 |
+| `save_interval=1000` | 1k, 2k, ..., 10k checkpoint 저장 |
+
+### A.9 진행 상황과 완료 확인
+
+```bash
+# systemd가 학습 프로세스를 실행 중인지 확인합니다.
+systemctl --user status octo-pick-place-30ep-10k.service
+
+# 학습 로그를 실시간으로 보고, 확인을 마치면 Ctrl+C로 tail만 종료합니다.
+tail -f runs/logs/pick_place_30ep_primary_wrist_10k.log
+
+# 완료 후 가장 최근의 해당 run 디렉터리를 셸 변수로 찾습니다.
+RUN_DIR=$(find runs/octo_ur5e/pick -maxdepth 1 -type d \
+  -name 'pick_place_30ep_primary_wrist_10k_*' \
+  -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+
+# 선택된 run 경로를 출력하여 다른 실험을 잘못 고르지 않았는지 확인합니다.
+printf '%s\n' "$RUN_DIR"
+
+# 10,000-step checkpoint가 실제로 저장되었는지 확인합니다.
+ls -ld "$RUN_DIR/state/10000"
+```
+
+`tail -f`에서 Ctrl+C를 눌러도 학습 service는 종료되지 않습니다. 학습 완료의 기준은 로그의 `100% ... 10000/10000`, traceback 부재, `state/10000` 존재입니다.
+
+### A.10 중단된 학습 Resume
+
+Resume는 모델 weight만 불러오는 것이 아니라 optimizer, RNG, 현재 step을 포함한 full TrainState인 `state/<step>/default`에서 시작해야 합니다. 원래 10k run은 그대로 보존하고, 이어서 저장되는 checkpoint와 로그는 반드시 새로운 run name에 기록합니다.
+
+먼저 원본 run과 마지막으로 완전히 저장된 checkpoint를 찾습니다.
+
+```bash
+# 기존 30-episode 10k run 중 가장 최근 디렉터리를 찾습니다.
+SOURCE_RUN=$(find runs/octo_ur5e/pick -maxdepth 1 -type d \
+  -name 'pick_place_30ep_primary_wrist_10k_*' \
+  -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+
+# 임시 Orbax 디렉터리를 제외하고, checkpoint 파일이 완성된 가장 큰 step을 찾습니다.
+RESUME_STATE=$(find "$SOURCE_RUN/state" -mindepth 1 -maxdepth 1 -type d \
+  -regextype posix-extended -regex '.*/[0-9]+' \
+  -exec test -f '{}/default/checkpoint' \; -print \
+  | sort -V | tail -1)
+
+# 선택된 원본 run과 resume checkpoint를 눈으로 확인합니다.
+printf 'SOURCE_RUN=%s\nRESUME_STATE=%s\n' "$SOURCE_RUN" "$RESUME_STATE"
+
+# checkpoint가 비어 있지 않고 full TrainState 파일을 포함하는지 확인합니다.
+test -n "$RESUME_STATE" && test -f "$RESUME_STATE/default/checkpoint"
+```
+
+예를 들어 마지막 저장 step이 4,000이면 아래 실행은 4,000에서 시작하여 **총 step 10,000**까지 남은 6,000 step을 수행합니다. `num_steps=10000`은 추가로 10,000번 학습한다는 뜻이 아닙니다.
+
+```bash
+# resume 전용 로그 파일의 디렉터리를 보장합니다.
+mkdir -p /home/sixr/octo_ur5e_finetuning/runs/logs
+
+# full TrainState resume wrapper를 별도 systemd service로 백그라운드 실행합니다.
+systemd-run --user \
+  --unit=octo-pick-place-30ep-resume-to-10k \
+  --collect \
+  --property=WorkingDirectory=/home/sixr/octo_ur5e_finetuning \
+  --property=StandardOutput=append:/home/sixr/octo_ur5e_finetuning/runs/logs/pick_place_30ep_primary_wrist_resume_to_10k.log \
+  --property=StandardError=append:/home/sixr/octo_ur5e_finetuning/runs/logs/pick_place_30ep_primary_wrist_resume_to_10k.log \
+  --setenv=PYTHONPATH=/home/sixr/octo_ur5e_finetuning \
+  --setenv=XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  --setenv=WANDB_MODE=offline \
+  --setenv=WANDB_DIR=/home/sixr/octo_ur5e_finetuning/runs/wandb \
+  --setenv=OCTO_FINETUNE_SCRIPT=/home/sixr/Desktop/octo/scripts/finetune.py \
+  --setenv=OCTO_RESUME_STATE="$RESUME_STATE" \
+  /home/sixr/miniconda3/envs/octo_env/bin/python \
+  /home/sixr/octo_ur5e_finetuning/training/resume_finetune.py \
+  --config=/home/sixr/octo_ur5e_finetuning/training/finetune_config.py:head_only,language_conditioned,wrist \
+  --name=pick_place_30ep_primary_wrist_resume_to_10k \
+  --config.dataset_kwargs.data_dir=/home/sixr/octo_ur5e_finetuning/data/pick_place/rlds/ur5e_pick_place_30ep_3val \
+  --config.save_dir=/home/sixr/octo_ur5e_finetuning/runs \
+  --config.num_steps=10000 \
+  --config.eval_interval=500 \
+  --config.save_interval=1000
+```
+
+Resume 상태를 확인하거나 다시 중단하는 명령은 다음과 같습니다.
+
+```bash
+# resume service 상태를 확인합니다.
+systemctl --user status octo-pick-place-30ep-resume-to-10k.service
+
+# resume 로그를 실시간으로 확인합니다. Ctrl+C는 로그 보기만 끝냅니다.
+tail -f runs/logs/pick_place_30ep_primary_wrist_resume_to_10k.log
+
+# 필요하면 resume 학습 프로세스를 안전하게 중단합니다.
+systemctl --user stop octo-pick-place-30ep-resume-to-10k.service
+```
+
+로그 초반에 `Resumed full TrainState ... at step ...`가 출력되어야 합니다. `*.orbax-checkpoint-tmp-*` 디렉터리는 저장 도중 중단된 임시 결과이므로 Resume 대상으로 사용하지 않습니다. 원본과 Resume에서 dataset, Primary/Wrist mode, optimizer 설정, seed 및 목표 총 step을 동일하게 유지해야 합니다.
+
+### A.11 loss 그래프 생성
+
+```bash
+# W&B offline history에서 train/validation loss CSV와 PNG를 생성합니다.
+octo-plot-metrics "$RUN_DIR"
+
+# 생성된 그래프와 수치 파일을 확인합니다.
+ls -lh "$RUN_DIR/loss.png" "$RUN_DIR/metrics.csv" "$RUN_DIR/metrics_summary.json"
+```
+
+이 과정은 학습을 다시 수행하지 않습니다. 마지막 checkpoint뿐 아니라 validation loss가 가장 낮은 checkpoint도 실제 로봇 검증 후보로 비교하십시오.

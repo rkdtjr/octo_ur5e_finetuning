@@ -12,10 +12,14 @@ def decode_rgb(value):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--checkpoint",required=True);parser.add_argument("--step",type=int,required=True);parser.add_argument("--samples",type=int,default=4);parser.add_argument("--use-wrist",action="store_true")
-    args=parser.parse_args();model=OctoModel.load_pretrained(args.checkpoint,step=args.step)
-    statistics=model.dataset_statistics["action"];rng=jax.random.PRNGKey(42);tasks={}
-    print(json.dumps({"ready":True,"step":args.step,"use_wrist":args.use_wrist,"spec":model.get_pretty_spec()}),flush=True)
+    parser=argparse.ArgumentParser();parser.add_argument("--checkpoint",required=True);parser.add_argument("--step",type=int);parser.add_argument("--dataset-statistics-key");parser.add_argument("--samples",type=int,default=4);parser.add_argument("--use-wrist",action="store_true")
+    args=parser.parse_args();load_kwargs={"step":args.step} if args.step is not None else {};model=OctoModel.load_pretrained(args.checkpoint,**load_kwargs)
+    if args.dataset_statistics_key:
+        if args.dataset_statistics_key not in model.dataset_statistics:raise KeyError(f"dataset statistics not found: {args.dataset_statistics_key}")
+        statistics=model.dataset_statistics[args.dataset_statistics_key]["action"]
+    else:statistics=model.dataset_statistics["action"]
+    rng=jax.random.PRNGKey(42);tasks={}
+    print(json.dumps({"ready":True,"step":args.step,"dataset_statistics_key":args.dataset_statistics_key,"use_wrist":args.use_wrist,"spec":model.get_pretty_spec()}),flush=True)
     for line in sys.stdin:
         try:
             request=json.loads(line);frames=np.stack([decode_rgb(x) for x in request["primary_jpeg_b64"]])

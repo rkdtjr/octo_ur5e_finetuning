@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from inference.safety import GripperDebouncer,limit_action,validate_target_position,gripper_transition
+from inference.safety import GripperDebouncer,adapt_gripper_semantics,limit_action,validate_target_position,gripper_transition
 from inference.octo_ur5e_inference import select_frame_pair,select_synchronized_pair
 
 def test_policy_action_limits_translation_rotation_and_gripper():
@@ -8,6 +8,11 @@ def test_policy_action_limits_translation_rotation_and_gripper():
     assert np.isclose(np.linalg.norm(value[:3]),.003)
     assert np.isclose(np.linalg.norm(value[3:6]),.02)
     assert value[6]==1
+
+def test_open_high_gripper_is_adapted_to_executor_closed_high():
+    np.testing.assert_allclose(adapt_gripper_semantics([1,2,3,4,5,6,.8],"open_high"),[1,2,3,4,5,6,.2])
+    np.testing.assert_allclose(adapt_gripper_semantics([1,2,3,4,5,6,.8],"closed_high"),[1,2,3,4,5,6,.8])
+    with pytest.raises(ValueError):adapt_gripper_semantics(np.zeros(7),"unknown")
 
 def test_policy_rejects_nonfinite_and_outside_workspace():
     with pytest.raises(ValueError):limit_action([np.nan]*7)
