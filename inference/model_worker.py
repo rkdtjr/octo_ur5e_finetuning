@@ -10,10 +10,6 @@ def decode_rgb(value):
     if bgr is None:raise ValueError("invalid JPEG frame")
     return cv2.cvtColor(bgr,cv2.COLOR_BGR2RGB)
 
-def invert_gripper_actions(gripper: np.ndarray) -> np.ndarray:
-    """Convert collector semantics (0=open,1=close) -> Octo semantics (0=close,1=open)."""
-    return 1.0 - gripper.astype(np.float32)
-
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--checkpoint",required=True);parser.add_argument("--step",type=int);parser.add_argument("--dataset-statistics-key");parser.add_argument("--samples",type=int,default=4);parser.add_argument("--use-wrist",action="store_true")
     args=parser.parse_args();load_kwargs={"step":args.step} if args.step is not None else {};model=OctoModel.load_pretrained(args.checkpoint,**load_kwargs)
